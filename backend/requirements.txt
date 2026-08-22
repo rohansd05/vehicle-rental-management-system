@@ -1,0 +1,42 @@
+# ─── Core ────────────────────────────────────────────────
+Django==5.2.6
+djangorestframework==3.16.0
+django-cors-headers==4.7.0
+django-filter==25.1
+djangorestframework-simplejwt==5.5.0
+drf-spectacular==0.28.0
+drf-spectacular-sidecar==2025.6.1
+
+# ─── Database ────────────────────────────────────────────
+psycopg[binary]==3.2.9
+dj-database-url==2.3.0
+
+# ─── Async tasks & scheduling ────────────────────────────
+celery==5.5.2
+redis==5.2.1
+django-celery-beat==2.7.0
+django-celery-results==2.5.1
+
+# ─── Security & auth ─────────────────────────────────────
+bcrypt==4.2.1
+django-axes==7.0.2
+argon2-cffi==23.1.0
+
+# ─── Files, images, documents ────────────────────────────
+Pillow==11.1.0
+weasyprint==63.1
+qrcode==8.0
+python-magic==0.4.27
+
+# ─── External services ───────────────────────────────────
+razorpay==1.4.2
+twilio==9.4.1
+requests==2.32.3
+
+# ─── Configuration ───────────────────────────────────────
+django-environ==0.12.0
+python-decouple==3.8
+
+# ─── Serving ─────────────────────────────────────────────
+gunicorn==23.0.0
+whitenoise==6.8.2
