@@ -15,7 +15,7 @@ matched exactly, not reinterpreted.
 
 ## Non-negotiable source of truth
 
-- `docs/experiments/SRS_Vehicle_Rental_Management_System_v2.docx` is the
+- `docs/experiments/AC_2024300049_ROHAN_SE_EXP1 (1).pdf` is the
   authoritative specification. If code and SRS disagree, the SRS wins —
   flag the conflict, don't silently resolve it.
 - Business rules are BR-1 through BR-16 (Section 5.5 of the SRS). Never

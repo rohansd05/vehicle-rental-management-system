@@ -113,7 +113,7 @@ for the same vehicle can ever overlap.
 ### Clone
 
 ```bash
-git clone https://github.com/<username>/vehicle-rental-management-system.git
+git clone https://github.com/rohansd05/vehicle-rental-management-system.git
 cd vehicle-rental-management-system
 ```
 
