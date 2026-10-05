@@ -1,0 +1,1 @@
+"""Bookings admin registrations."""
