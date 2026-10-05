@@ -73,7 +73,7 @@ Exp 6 note: on Level 1, Rohan manually added two flows, P8 → D3 "tariff defini
 
 ## 4. Domain decisions (the code must honour these)
 
-The authoritative SRS is docs/experiments/AC_2024300049_ROHAN_SE_EXP1 (1).pdf (Version 1.0, Maps Service removed). CLAUDE.md points to it.
+The authoritative SRS is docs/experiments/AC_2024300049_ROHAN_SE_EXP1.pdf (Version 1.0, Maps Service removed). CLAUDE.md points to it.
 
 ### Scope
 

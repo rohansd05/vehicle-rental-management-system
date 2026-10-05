@@ -15,7 +15,7 @@ matched exactly, not reinterpreted.
 
 ## Non-negotiable source of truth
 
-- `docs/experiments/AC_2024300049_ROHAN_SE_EXP1 (1).pdf` is the
+- `docs/experiments/AC_2024300049_ROHAN_SE_EXP1.pdf` is the
   authoritative specification. If code and SRS disagree, the SRS wins —
   flag the conflict, don't silently resolve it.
 - Business rules are BR-1 through BR-16 (Section 5.5 of the SRS). Never
@@ -24,7 +24,7 @@ matched exactly, not reinterpreted.
 - Requirement IDs (e.g. `Book.Done.Store`, `Handover.Refuse`,
   `Search.Available`) should appear as comments or docstrings next to the
   code that implements them, so the traceability matrix stays honest.
-- The 19 classes and their attributes/methods in Exp 3 (Class Diagram) are
+- The 20 classes and their attributes/methods in Exp 3 (Class Diagram) are
   the starting model shape. Extend them where the SRS requires fields the
   diagram omitted (e.g. `VehicleDocument`, `PartUsed`, `AddOn`, `Ledger`,
   `AuditLog`) — don't rename or drop existing ones.
@@ -49,10 +49,9 @@ matched exactly, not reinterpreted.
     password or card detail (SE-2, CO-2).
   - No card numbers, expiry, or CVV touch our backend or logs — payment
     gateway hosted fields/tokens only.
-- **External services:** Payment Gateway, Notification Service, and Maps
-  Service must each sit behind an interface in `integrations/` with at
-  least a sandbox/mock implementation, so tests never hit a real network
-  call.
+- **External services:** Payment Gateway and Notification Service must
+  each sit behind an interface in `integrations/` with at least a
+  sandbox/mock implementation, so tests never hit a real network call.
 - **Audit log:** any create/update/delete of vehicle, tariff, branch,
   user, or blacklist data must write an audit entry. Audit entries are
   append-only — no update or delete endpoint should ever touch them.
@@ -71,9 +70,52 @@ matched exactly, not reinterpreted.
   Don't bundle backend and frontend changes for unrelated features in
   one commit.
 - Don't add new dependencies without checking they're MIT/Apache 2.0/BSD
-  licensed (CO-7).
+  licensed, or covered by the CO-7 amendment (see Decisions, D2).
 - Ask before running destructive commands (`migrate --fake`, dropping a
   database, force-pushing, deleting migrations).
+- Run Python tools through `backend\venv\Scripts\python.exe` (Python 3.12).
+- Celery on Windows needs `--pool=solo`
+  (`celery -A config worker -l info --pool=solo`); the default prefork pool
+  does not work there.
+
+## Decisions
+
+Settled before Phase 0; full rationale in `docs/decisions.md`. These
+supersede section 7 ("Open decisions") of `docs/VRMS_Handoff.md`.
+
+- **D1 Deployment:** one Azure VM (Ubuntu) running docker-compose with
+  Postgres 16, Valkey, Django + gunicorn, Celery worker, Celery Beat and
+  Caddy (serves the React build, reverse-proxies `/api` and `/admin`,
+  automatic HTTPS). Nothing may block this layout.
+- **D2 CO-7 amended:** "LGPL libraries used unmodified as dependencies
+  (psycopg) and HPND (Pillow) are permitted." Valkey (BSD) replaces the
+  Redis server, whose current licences fail CO-7; the `redis` Python
+  client (MIT) is still used.
+- **D3 Local dev:** Postgres and Valkey run in Docker; Django runs natively
+  in a Windows venv. reportlab replaces weasyprint. python-magic is removed;
+  uploads are validated by extension, size and Pillow `verify()`.
+- **D4 Hashing:** argon2-cffi removed. The first `PASSWORD_HASHERS` entry is
+  a `BCryptSHA256PasswordHasher` subclass with `rounds = 12` (SE-2).
+- **D5 Configuration:** django-environ only; python-decouple and
+  dj-database-url removed.
+- **D6 Online payments:** UPI, net banking and wallet are channels of
+  `OnlinePayment` (a `channel` field, Phase 1; `upi_id` kept). No separate
+  wallet class.
+- **D7 Currency and name:** currency is INR. The agency name comes only
+  from settings `AGENCY_NAME` (default placeholder `"[Agency Name]"`).
+  Never hardcode the name in the backend or the frontend.
+- **D8 Mobile:** a responsive PWA meets OE-2 for Release 1.0.
+- **D9 Scope:** every feature in the SRS and Experiments 1-7, deployed by
+  12 Oct 2026, built by two developers in parallel.
+
+## Ownership
+
+- **Rohan:** accounts, fleet (except availability), bookings, payments,
+  notifications, reports, core (WBS 1.4.1, 1.4.3, 1.4.5).
+- **Nidhi:** pricing, `fleet/services/availability.py` plus the search
+  API/UI, rentals, maintenance (WBS 1.4.2, 1.4.4).
+- **Rule:** only an app's owner edits its `models.py` or migrations;
+  anyone else asks the owner.
 
 ## Things to never do
 
