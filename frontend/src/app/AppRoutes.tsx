@@ -6,6 +6,7 @@ import { PublicLayout } from '@/components/layout/PublicLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RegisterPage } from '@/features/auth/RegisterPage'
 import { VerifyOtpPage } from '@/features/auth/VerifyOtpPage'
+import { ProfilePage } from '@/features/profile/ProfilePage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { HelpPage } from '@/pages/HelpPage'
 import { NotAvailablePage } from '@/pages/NotAvailablePage'
@@ -56,6 +57,7 @@ export function AppRoutes() {
         }
       >
         <Route index element={<DashboardPage />} />
+        <Route path="profile" element={<ProfilePage />} />
         {UPCOMING_ITEMS.map((item) => (
           <Route
             key={item.to}
