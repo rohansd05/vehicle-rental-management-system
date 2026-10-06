@@ -355,7 +355,9 @@ class LicenceView(_ThrottledView):
 
     @extend_schema(tags=[LICENCE_TAG], summary="My driving licence", responses=LicenceSerializer)
     def get(self, request):
-        licence = Licence.objects.get(customer=request.user.customer)
+        # Every customer has a licence status (Appendix A); one created in the
+        # admin may not have a row yet, so it starts as Not Submitted.
+        licence, _ = Licence.objects.get_or_create(customer=request.user.customer)
         return Response(LicenceSerializer(licence, context={"request": request}).data)
 
     @extend_schema(
