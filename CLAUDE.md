@@ -135,6 +135,11 @@ supersede section 7 ("Open decisions") of `docs/VRMS_Handoff.md`.
 - **D20 Proposed auth values:** throttle rates, OTP length and resend
   cooldown, mobile format, licence image limits and related behaviours
   (A1-A16) await team approval; password reset is not built.
+- **D21 Cookie:** the refresh token lives only in the httpOnly,
+  SameSite=Strict `vrms_refresh` cookie (path /api/v1/auth/, Secure except
+  in development); login/refresh bodies hold only `{access, user}`; logout
+  clears the cookie. The frontend keeps the access token in memory only,
+  never in localStorage or sessionStorage.
 
 ## Ownership
 
