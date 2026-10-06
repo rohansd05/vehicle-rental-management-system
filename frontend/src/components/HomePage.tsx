@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 
-import { getHealth } from '@/api/health'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -11,6 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { useAuth } from '@/features/auth/auth-context'
+import { PRODUCT_NAME, useAgency } from '@/hooks/page'
 import { cn } from '@/lib/utils'
 
 type Tone = 'ok' | 'warn' | 'error' | 'muted'
@@ -20,9 +21,9 @@ function StatusPill({ tone, children }: { tone: Tone; children: string }) {
     <span
       className={cn(
         'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-        tone === 'ok' && 'bg-emerald-100 text-emerald-800',
-        tone === 'warn' && 'bg-amber-100 text-amber-800',
-        tone === 'error' && 'bg-red-100 text-red-800',
+        tone === 'ok' && 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+        tone === 'warn' && 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+        tone === 'error' && 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
         tone === 'muted' && 'bg-muted text-muted-foreground',
       )}
     >
@@ -40,14 +41,14 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
+/** The public home page: what the service is, how to start, and the system status. */
 export function HomePage() {
-  const health = useQuery({ queryKey: ['health'], queryFn: getHealth })
+  const { status } = useAuth()
+  const { health } = useAgency()
   const agencyName = health.data?.agency_name
 
   useEffect(() => {
-    if (agencyName) {
-      document.title = agencyName
-    }
+    document.title = agencyName || PRODUCT_NAME
   }, [agencyName])
 
   let apiTone: Tone = 'muted'
@@ -61,13 +62,37 @@ export function HomePage() {
   }
 
   return (
-    <main className="flex min-h-svh items-start justify-center bg-muted/40 px-4 py-8 sm:items-center">
-      <Card className="w-full max-w-md">
+    <div className="grid items-start gap-8 md:grid-cols-[1fr_minmax(0,22rem)]">
+      <section>
+        <h1 className="text-3xl font-semibold tracking-tight break-words sm:text-4xl">
+          {agencyName ?? (health.isError ? 'Service unavailable' : 'Loading…')}
+        </h1>
+        <p className="mt-3 max-w-prose text-muted-foreground">
+          Book a car or two-wheeler online for the dates you need, collect it from a branch or
+          have it delivered, and pay by card, online or in cash at the branch.
+        </p>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          {status === 'signed-in' ? (
+            <Button asChild size="lg" className="h-10">
+              <Link to="/app">Go to my account</Link>
+            </Button>
+          ) : (
+            <>
+              <Button asChild size="lg" className="h-10">
+                <Link to="/register">Create an account</Link>
+              </Button>
+              <Button asChild size="lg" variant="outline" className="h-10">
+                <Link to="/login">Sign in</Link>
+              </Button>
+            </>
+          )}
+        </div>
+      </section>
+
+      <Card>
         <CardHeader>
-          <CardTitle className="text-xl break-words">
-            {agencyName ?? (health.isError ? 'Service unavailable' : 'Loading…')}
-          </CardTitle>
-          <CardDescription>Vehicle Rental Management System</CardDescription>
+          <CardTitle>System status</CardTitle>
+          <CardDescription>{PRODUCT_NAME}</CardDescription>
         </CardHeader>
         <CardContent>
           <dl className="divide-y">
@@ -97,6 +122,6 @@ export function HomePage() {
           </Button>
         </CardFooter>
       </Card>
-    </main>
+    </div>
   )
 }

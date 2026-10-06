@@ -305,6 +305,61 @@ The SRS does not specify these. They are implemented as listed and stay
 | A15 | Lockout e-mail | Sent once per lock, even if more attempts arrive during it |
 | A16 | Licence numbers | Stored in upper case so the uniqueness check ignores case |
 
+## D21 — Refresh token in an httpOnly cookie; access token in memory
+
+**Decision.**
+
+- The refresh token moves out of response bodies into the cookie
+  `vrms_refresh`: httpOnly, SameSite=Strict, Path=/api/v1/auth/, Max-Age
+  30 minutes, and Secure everywhere except development (plain
+  http://localhost).
+- `auth/login/` and `auth/refresh/` set the cookie and return only
+  `{access, user}`. `auth/refresh/` takes no body; it reads the cookie.
+- `auth/logout/` blacklists the cookie's token and always clears the
+  cookie; `auth/password/change/` clears it too (every token was already
+  blacklisted, A11).
+- Rotation and blacklisting are unchanged (D19).
+- The frontend keeps the access token in memory only; it never touches
+  localStorage or sessionStorage.
+- `auth/logout/` no longer needs an access token (AllowAny, no
+  authentication). After 30 idle minutes the access token has expired, but
+  the browser must still be able to drop a cookie that page scripts cannot
+  read or delete.
+
+**Rationale.** A token in a response body ends up in JavaScript memory and
+often in web storage, where any XSS bug can read it. An httpOnly cookie
+cannot be read by scripts at all. SameSite=Strict means the browser never
+attaches it to a request started by another site, which is the CSRF
+defence for the two endpoints that accept it (refresh and logout); the
+narrow path means it is never sent to the rest of the API, which still
+authenticates by the short-lived `Authorization: Bearer` access token.
+Because the page is served same-origin behind Caddy (D1) and through the
+Vite proxy in development, no CORS or cross-site cookie settings are
+needed. Keeping the access token in memory means a reload loses it; the
+frontend restores the session by calling `auth/refresh/` on page load,
+which the cookie makes possible.
+
+**Known limitation.** Two tabs that refresh at the same instant race on
+rotation: the second presents a just-blacklisted token and is signed out.
+Coordinating tabs (for example with a BroadcastChannel) is proposed as F1
+below.
+
+## Phase 1C frontend: proposed items (awaiting team approval)
+
+The SRS does not settle these; the frontend implements them as listed.
+
+| # | Item | Proposal |
+|---|---|---|
+| F1 | Several tabs open at once | Not coordinated yet: two tabs refreshing at the same instant can sign one of them out (D21). Proposal: share refreshes between tabs with a BroadcastChannel. |
+| F2 | When the access token is refreshed | One minute before it expires, and only if the user did something since the last refresh (pointer, keyboard, touch, or returning to the tab). Coming back after the token lapsed refreshes at once. |
+| F3 | OTP error wording | The server answers every failure the same way. The verify screen knows when the code was sent and how many tries were made on this screen, so it says "wrong (n tries left)", "expired" or "too many attempts". After a page reload it falls back to the server's generic message. |
+| F4 | Licence review screen | There is no `GET licences/{id}/`; the review screen uses the licence passed from the queue, or finds it in the queue's first page (20 oldest). Proposal: add the detail endpoint. |
+| F5 | Mobile-change resend | A visible 60-second countdown on the client, matching A3; the server applies only the profile throttle (A1) to mobile-change codes. |
+| F6 | Accent colour | `oklch(0.47 0.12 240)` in light mode and `oklch(0.76 0.11 235)` in dark mode, as the `--brand` token; light and dark follow the OS. |
+| F7 | Help link (UI-2) | Present on every screen; it leads to a short help page until the online help system (UD-1) is built. |
+| F8 | Planned features in the menu | Shown with a "Soon" label and an honest "not available yet" page; no sample data. |
+| F9 | Registration fields | Date of birth (BR-2) and an emergency contact (SA-4) are asked at registration, because the backend requires them. |
+
 ---
 
 ## Third-party packages and licences

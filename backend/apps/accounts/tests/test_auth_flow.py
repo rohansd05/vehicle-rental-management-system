@@ -11,6 +11,8 @@ from apps.notifications.models import Notification
 
 pytestmark = pytest.mark.django_db
 
+COOKIE = "vrms_refresh"
+
 
 def _register(client, **overrides):
     return client.post(reverse("accounts:register"), {**REGISTRATION, **overrides}, format="json")
@@ -40,30 +42,40 @@ def test_full_flow(api_client, latest_code):
     user.refresh_from_db()
     assert user.is_active
 
-    # Sign in.
+    # Sign in: the access token in the body, the refresh token only in the cookie (D21).
     tokens = api_client.post(reverse("accounts:login"), login, format="json")
     assert tokens.status_code == 200
     body = tokens.json()
+    assert set(body) == {"access", "user"}
     assert body["user"]["email"] == "asha@example.com"
     assert body["user"]["role"] == "CUSTOMER"
+    first_refresh = tokens.cookies[COOKIE].value
+    assert first_refresh
 
     # The access token works.
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {body['access']}")
     assert api_client.get(reverse("accounts:me")).json()["email"] == "asha@example.com"
+    api_client.credentials()
 
-    # Refresh rotates the pair; the old refresh token is now blacklisted.
-    refreshed = api_client.post(reverse("accounts:refresh"), {"refresh": body["refresh"]})
+    # Refresh with the cookie alone rotates it; the old token is blacklisted.
+    refreshed = api_client.post(reverse("accounts:refresh"))
     assert refreshed.status_code == 200
-    new_refresh = refreshed.json()["refresh"]
-    assert new_refresh != body["refresh"]
-    reused = api_client.post(reverse("accounts:refresh"), {"refresh": body["refresh"]})
+    assert set(refreshed.json()) == {"access", "user"}
+    second_refresh = refreshed.cookies[COOKIE].value
+    assert second_refresh != first_refresh
+    api_client.cookies[COOKIE] = first_refresh
+    reused = api_client.post(reverse("accounts:refresh"))
     assert reused.status_code == 401
+    assert reused.json()["code"] == "session_ended"
 
-    # Sign out blacklists the current refresh token.
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {refreshed.json()['access']}")
-    assert api_client.post(reverse("accounts:logout"), {"refresh": new_refresh}).status_code == 204
-    after = api_client.post(reverse("accounts:refresh"), {"refresh": new_refresh})
-    assert after.status_code == 401
+    # Sign out blacklists the current cookie and clears it.
+    api_client.cookies[COOKIE] = second_refresh
+    logout = api_client.post(reverse("accounts:logout"))
+    assert logout.status_code == 204
+    assert logout.cookies[COOKIE].value == ""
+    assert logout.cookies[COOKIE]["max-age"] == 0
+    api_client.cookies[COOKIE] = second_refresh
+    assert api_client.post(reverse("accounts:refresh")).status_code == 401
 
     # SE-10: every step is audited and the chain holds.
     actions = set(AuditLog.objects.values_list("action", flat=True))
@@ -115,14 +127,11 @@ def test_disabled_account_cannot_sign_in_or_refresh(api_client):
     tokens = api_client.post(reverse("accounts:login"), login, format="json").json()
     customer.user.is_active = False
     customer.user.save()
-    assert api_client.post(reverse("accounts:login"), login, format="json").status_code == 401
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
     assert api_client.get(reverse("accounts:me")).status_code == 401
     api_client.credentials()
-    assert (
-        api_client.post(reverse("accounts:refresh"), {"refresh": tokens["refresh"]}).status_code
-        == 401
-    )
+    assert api_client.post(reverse("accounts:refresh")).status_code == 401  # cookie refused
+    assert api_client.post(reverse("accounts:login"), login, format="json").status_code == 401
 
 
 def test_disabled_verified_customer_cannot_reactivate_by_otp(api_client, latest_code):
@@ -134,15 +143,22 @@ def test_disabled_verified_customer_cannot_reactivate_by_otp(api_client, latest_
     assert OneTimePassword.objects.filter(user__email=REGISTRATION["email"]).count() == 1
 
 
-def test_logout_rejects_someone_elses_token(api_client):
-    first, second = CustomerFactory(), CustomerFactory()
-    login = {"email": first.user.email, "password": "Test@12345"}
-    first_tokens = api_client.post(reverse("accounts:login"), login, format="json").json()
-    login = {"email": second.user.email, "password": "Test@12345"}
-    second_tokens = api_client.post(reverse("accounts:login"), login, format="json").json()
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {second_tokens['access']}")
-    response = api_client.post(reverse("accounts:logout"), {"refresh": first_tokens["refresh"]})
-    assert response.status_code == 400
+def test_logout_works_without_an_access_token(api_client):
+    """D21: after 30 idle minutes the access token is long gone, yet sign-out
+    must still revoke the refresh token and clear the httpOnly cookie."""
+    customer = CustomerFactory()
+    login = {"email": customer.user.email, "password": "Test@12345"}
+    cookie = api_client.post(reverse("accounts:login"), login, format="json").cookies[COOKIE]
+    response = api_client.post(reverse("accounts:logout"))  # no Authorization header
+    assert response.status_code == 204
+    api_client.cookies[COOKIE] = cookie.value
+    assert api_client.post(reverse("accounts:refresh")).status_code == 401
+
+
+def test_logout_without_a_cookie_still_clears_it(api_client):
+    response = api_client.post(reverse("accounts:logout"))
+    assert response.status_code == 204
+    assert response.cookies[COOKIE].value == ""
 
 
 def test_login_email_is_case_insensitive(api_client):

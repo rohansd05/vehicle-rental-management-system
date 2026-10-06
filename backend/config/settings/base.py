@@ -201,6 +201,12 @@ SIMPLE_JWT = {
 # applies the permission classes.
 API_DOCS_PUBLIC = False
 
+# D21: the refresh token travels only in this httpOnly, SameSite=Strict
+# cookie, scoped to the auth endpoints (apps/accounts/cookies.py).
+AUTH_REFRESH_COOKIE_NAME = "vrms_refresh"
+AUTH_REFRESH_COOKIE_PATH = "/api/v1/auth/"
+AUTH_REFRESH_COOKIE_SECURE = True
+
 SPECTACULAR_SETTINGS = {
     "TITLE": "Vehicle Rental Management System API",
     "DESCRIPTION": "REST + JSON API documented with OpenAPI 3.0 (CO-4).",

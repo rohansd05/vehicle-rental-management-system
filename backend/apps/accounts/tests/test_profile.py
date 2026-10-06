@@ -69,18 +69,18 @@ def test_mobile_change_waits_for_the_otp(user, latest_code):
 
 def test_password_change_ends_every_session(api_client, user):
     login = {"email": user.email, "password": "Test@12345"}
-    tokens = api_client.post(reverse("accounts:login"), login, format="json").json()
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+    signed_in = api_client.post(reverse("accounts:login"), login, format="json")
+    old_cookie = signed_in.cookies["vrms_refresh"].value
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {signed_in.json()['access']}")
     response = api_client.post(
         reverse("accounts:password-change"),
         {"current_password": "Test@12345", "new_password": "N3w!Passw0rd-2026"},
     )
     assert response.status_code == 200
+    assert response.cookies["vrms_refresh"].value == ""  # D21: cookie cleared
     api_client.credentials()
-    assert (
-        api_client.post(reverse("accounts:refresh"), {"refresh": tokens["refresh"]}).status_code
-        == 401
-    )
+    api_client.cookies["vrms_refresh"] = old_cookie
+    assert api_client.post(reverse("accounts:refresh")).status_code == 401
     assert api_client.post(reverse("accounts:login"), login, format="json").status_code == 401
     login["password"] = "N3w!Passw0rd-2026"
     assert api_client.post(reverse("accounts:login"), login, format="json").status_code == 200

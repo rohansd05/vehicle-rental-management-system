@@ -55,9 +55,8 @@ ENDPOINTS = [
     ("verify-otp", "post", lambda: reverse("accounts:verify-otp"), set(ROLES)),
     ("resend-otp", "post", lambda: reverse("accounts:resend-otp"), set(ROLES)),
     ("login", "post", lambda: reverse("accounts:login"), set(ROLES)),
-    ("refresh", "post", lambda: reverse("accounts:refresh"), set(ROLES)),
     ("health", "get", lambda: reverse("core:health"), set(ROLES)),
-    ("logout", "post", lambda: reverse("accounts:logout"), EVERY_SIGNED_IN),
+    ("logout", "post", lambda: reverse("accounts:logout"), set(ROLES)),  # D21
     ("password-change", "post", lambda: reverse("accounts:password-change"), EVERY_SIGNED_IN),
     ("me-get", "get", lambda: reverse("accounts:me"), EVERY_SIGNED_IN),
     ("me-patch", "patch", lambda: reverse("accounts:me"), EVERY_SIGNED_IN),
@@ -122,3 +121,22 @@ def test_customer_without_profile_is_denied_licence():
     user.customer.delete()
     response = authenticated_client(user).get(reverse("accounts:licence"))
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize("role", [r for r in ROLES if r != "anonymous"])
+def test_refresh_works_for_every_role_with_its_cookie(api_client, role):
+    """refresh/ is AllowAny: the cookie, not the role, is the credential (D21)."""
+    user = _user(role)
+    login = {"email": user.email, "password": "Test@12345"}
+    assert api_client.post(reverse("accounts:login"), login, format="json").status_code == 200
+    response = api_client.post(reverse("accounts:refresh"))
+    assert response.status_code == 200
+    assert response.json()["user"]["role"] == user.role
+
+
+@pytest.mark.parametrize("role", ROLES)
+def test_refresh_without_a_cookie_is_401_for_everyone(api_client, role):
+    client, _ = _client(role, api_client)
+    response = client.post(reverse("accounts:refresh"))
+    assert response.status_code == 401
+    assert response.json()["code"] == "session_ended"

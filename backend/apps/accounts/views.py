@@ -12,22 +12,24 @@ from django.core.cache import cache
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import status
-from rest_framework.exceptions import Throttled, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, Throttled, ValidationError
 from rest_framework.generics import ListAPIView
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
-from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from apps.core.permissions import IsAdministrator, IsBranchStaff, IsCustomer
 
 from . import services
-from .models import Licence
+from .cookies import clear_refresh_cookie, read_refresh_cookie, set_refresh_cookie
+from .models import Licence, User
 from .serializers import (
+    AccessTokenSerializer,
     DetailSerializer,
     EmailSerializer,
     LicenceRejectSerializer,
@@ -40,10 +42,8 @@ from .serializers import (
     ProfileSerializer,
     ProfileUpdateResponseSerializer,
     ProfileUpdateSerializer,
-    RefreshSerializer,
     RegisterResponseSerializer,
     RegisterSerializer,
-    TokenPairSerializer,
     UserSummarySerializer,
     VerifyOTPSerializer,
 )
@@ -52,6 +52,13 @@ from .serializers import (
 # account exists, is unverified or is disabled.
 GENERIC_LOGIN_FAILURE = "Unable to sign in with the details provided."
 GENERIC_OTP_FAILURE = "The code is invalid or has expired."
+SESSION_ENDED = "Your session has ended. Please sign in again."
+
+COOKIE_NOTE = (
+    "The refresh token is never in a response body (D21). It is set as the httpOnly, "
+    "SameSite=Strict cookie `vrms_refresh`, scoped to /api/v1/auth/, which the browser "
+    "sends back automatically. Keep the access token in memory only."
+)
 
 AUTH_TAG = "Authentication"
 PROFILE_TAG = "Profile"
@@ -167,8 +174,12 @@ class LoginView(_PublicView):
         tags=[AUTH_TAG],
         summary="Sign in",
         request=LoginSerializer,
+        description=(
+            "Returns the access token (5 minutes) and the user, and sets the refresh "
+            "cookie (30 minutes). " + COOKIE_NOTE
+        ),
         responses={
-            200: TokenPairSerializer,
+            200: AccessTokenSerializer,
             401: DetailSerializer,
             403: OpenApiResponse(DetailSerializer, description="Account locked (SE-8)"),
         },
@@ -201,58 +212,95 @@ class LoginView(_PublicView):
         user_logged_in.send(sender=user.__class__, request=django_request, user=user)
         services.record_login(user, request)
         refresh = RefreshToken.for_user(user)
-        return Response(
-            {
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-                "user": UserSummarySerializer(user).data,
-            }
+        response = Response(
+            {"access": str(refresh.access_token), "user": UserSummarySerializer(user).data}
         )
+        set_refresh_cookie(response, str(refresh))
+        return response
 
 
-class RefreshView(TokenRefreshView):
-    """SE-9: trade a refresh token for a new pair; the old one is blacklisted."""
+def _session_ended() -> Response:
+    response = Response(
+        {"detail": SESSION_ENDED, "code": "session_ended"}, status=status.HTTP_401_UNAUTHORIZED
+    )
+    clear_refresh_cookie(response)
+    return response
 
-    permission_classes = [AllowAny]
-    authentication_classes: list = []
-    throttle_classes = [ScopedRateThrottle]
+
+class RefreshView(_PublicView):
+    """SE-9, D19, D21: trade the refresh cookie for a new access token.
+
+    The cookie rotates: a new refresh token is set and the old one is
+    blacklisted, so a copied cookie works at most once.
+    """
+
     throttle_scope = "auth_token"
 
     @extend_schema(
         tags=[AUTH_TAG],
-        summary="Refresh the token pair",
-        examples=[OpenApiExample("Refresh", request_only=True, value={"refresh": "<refresh>"})],
+        summary="Refresh the access token",
+        description=(
+            "No request body. Reads the refresh cookie, blacklists it, sets a new one and "
+            "returns a new access token and the user (also used to restore a session when "
+            "the page loads). 401 with code `session_ended` when the cookie is missing, "
+            "expired or already used; the cookie is then cleared. " + COOKIE_NOTE
+        ),
+        request=None,
+        responses={200: AccessTokenSerializer, 401: DetailSerializer},
     )
-    def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
+    def post(self, request):
+        raw = read_refresh_cookie(request)
+        if raw is None:
+            return _session_ended()
+        serializer = TokenRefreshSerializer(data={"refresh": raw})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except (InvalidToken, TokenError, AuthenticationFailed):
+            return _session_ended()
+        access = serializer.validated_data["access"]
+        claim = settings.SIMPLE_JWT.get("USER_ID_CLAIM", "user_id")
+        user = User.objects.get(pk=AccessToken(access)[claim])
+        response = Response({"access": access, "user": UserSummarySerializer(user).data})
+        set_refresh_cookie(response, serializer.validated_data.get("refresh", raw))
+        return response
 
 
-class LogoutView(_ThrottledView):
-    """Blacklist the refresh token so the session cannot be renewed."""
+class LogoutView(_PublicView):
+    """Blacklist the refresh cookie's token and clear the cookie (D21).
 
-    permission_classes = [IsAuthenticated]
+    No access token is needed: after 30 idle minutes the access token has
+    long expired, yet the browser must still be able to drop the httpOnly
+    cookie, which page scripts cannot touch. SameSite=Strict keeps other
+    sites from triggering it.
+    """
+
     throttle_scope = "auth_token"
 
     @extend_schema(
         tags=[AUTH_TAG],
         summary="Sign out",
-        request=RefreshSerializer,
-        responses={204: None, 400: DetailSerializer},
-        examples=[OpenApiExample("Sign out", request_only=True, value={"refresh": "<refresh>"})],
+        description=(
+            "No request body and no access token needed. Blacklists the refresh token in "
+            "the cookie, if any, and always clears the cookie. " + COOKIE_NOTE
+        ),
+        request=None,
+        responses={204: None},
     )
     def post(self, request):
-        serializer = RefreshSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            token = RefreshToken(serializer.validated_data["refresh"])
-        except TokenError as exc:
-            raise ValidationError({"detail": "The token is invalid or expired."}) from exc
-        claim = settings.SIMPLE_JWT.get("USER_ID_CLAIM", "user_id")
-        if str(token.get(claim)) != str(request.user.pk):
-            raise ValidationError({"detail": "The token is invalid or expired."})
-        token.blacklist()
-        services.record_logout(request.user, request)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        raw = read_refresh_cookie(request)
+        if raw is not None:
+            try:
+                token = RefreshToken(raw)  # also rejects a blacklisted token
+                claim = settings.SIMPLE_JWT.get("USER_ID_CLAIM", "user_id")
+                user = User.objects.filter(pk=token.get(claim)).first()
+                token.blacklist()
+                if user is not None:
+                    services.record_logout(user, request)
+            except TokenError:
+                pass  # already expired or used: nothing left to revoke
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        clear_refresh_cookie(response)
+        return response
 
 
 class PasswordChangeView(_ThrottledView):
@@ -278,7 +326,9 @@ class PasswordChangeView(_ThrottledView):
         serializer = PasswordChangeSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         services.change_password(request.user, serializer.validated_data["new_password"], request)
-        return Response({"detail": "Password changed. Please sign in again."})
+        response = Response({"detail": "Password changed. Please sign in again."})
+        clear_refresh_cookie(response)  # every refresh token was blacklisted (A11)
+        return response
 
 
 class MeView(_ThrottledView):

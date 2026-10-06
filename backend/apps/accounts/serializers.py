@@ -95,14 +95,11 @@ class UserSummarySerializer(serializers.ModelSerializer):
         fields = ["id", "email", "name", "role"]
 
 
-class TokenPairSerializer(serializers.Serializer):
+class AccessTokenSerializer(serializers.Serializer):
+    """Sign-in and refresh response (D21): the refresh token is in the cookie only."""
+
     access = serializers.CharField()
-    refresh = serializers.CharField()
     user = UserSummarySerializer()
-
-
-class RefreshSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
 
 
 class ProfileSerializer(serializers.ModelSerializer):

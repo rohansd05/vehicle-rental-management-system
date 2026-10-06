@@ -74,6 +74,10 @@ matched exactly, not reinterpreted.
 - Ask before running destructive commands (`migrate --fake`, dropping a
   database, force-pushing, deleting migrations).
 - Run Python tools through `backend\venv\Scripts\python.exe` (Python 3.12).
+- After any API change, run `npm run api:schema` and `npm run api:types` in
+  `frontend/` and commit `docs/api/openapi.yaml` and `src/api/schema.d.ts`.
+- Frontend tokens: the access token stays in memory only; never use
+  localStorage or sessionStorage for tokens (D21).
 - Celery on Windows needs `--pool=solo`
   (`celery -A config worker -l info --pool=solo`); the default prefork pool
   does not work there.
@@ -135,6 +139,11 @@ supersede section 7 ("Open decisions") of `docs/VRMS_Handoff.md`.
 - **D20 Proposed auth values:** throttle rates, OTP length and resend
   cooldown, mobile format, licence image limits and related behaviours
   (A1-A16) await team approval; password reset is not built.
+- **D21 Cookie:** the refresh token lives only in the httpOnly,
+  SameSite=Strict `vrms_refresh` cookie (path /api/v1/auth/, Secure except
+  in development); login/refresh bodies hold only `{access, user}`; logout
+  clears the cookie. The frontend keeps the access token in memory only,
+  never in localStorage or sessionStorage.
 
 ## Ownership
 
