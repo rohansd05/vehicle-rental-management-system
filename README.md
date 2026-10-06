@@ -134,8 +134,12 @@ py -3.12 -m venv venv                       # skip if backend\venv already exist
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env                 # then edit .env
 .\venv\Scripts\python.exe manage.py migrate
-.\venv\Scripts\python.exe manage.py createsuperuser
+.\venv\Scripts\python.exe manage.py seed_demo          # demo data and demo accounts
 ```
+
+`seed_demo` is idempotent. `seed_demo --reset` removes only the demo data and
+loads it again; it refuses if bookings or other records already use it. To
+create your own administrator instead, run `manage.py createsuperuser`.
 
 Always call the venv's interpreter (`.\venv\Scripts\python.exe`) or activate
 the venv first (`.\venv\Scripts\Activate.ps1`), so that no other Python
@@ -209,12 +213,16 @@ cd frontend; npm run dev
 
 ### Demo accounts
 
+Created by `manage.py seed_demo`. Demo data only; never use these accounts
+or this password in production.
+
 | Role | E-mail | Password |
 |---|---|---|
 | Customer | customer@vrms.test | Demo@1234 |
 | Branch Staff | staff@vrms.test | Demo@1234 |
 | Technician | tech@vrms.test | Demo@1234 |
 | Administrator | admin@vrms.test | Demo@1234 |
+| Branch Manager | manager@vrms.test | Demo@1234 |
 
 ---
 
