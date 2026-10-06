@@ -34,7 +34,8 @@ disputes over charges, and missed vehicle servicing.
   transmission, price and rating
 - Book a car or two-wheeler with a 15-minute vehicle hold during checkout
 - Modify, extend or cancel a booking under a published cancellation policy
-- Pay by card, online transfer, wallet, or cash on branch collection
+- Pay by card, online (UPI, net banking or wallet), or cash on branch
+  collection
 - Rental history with downloadable invoices, rental agreements and condition
   reports
 - Rate the vehicle and the service after a completed rental
@@ -65,7 +66,7 @@ disputes over charges, and missed vehicle servicing.
 |---|---|
 | Backend | Django 5.2 LTS, Django REST Framework |
 | Database | PostgreSQL 16 |
-| Async tasks | Celery + Redis, Celery Beat for scheduled jobs |
+| Async tasks | Celery + Valkey (Redis-protocol broker), Celery Beat for scheduled jobs |
 | Auth | JWT (SimpleJWT), bcrypt password hashing |
 | API docs | drf-spectacular (OpenAPI 3.0) |
 | Frontend | React 18, TypeScript, Vite |
@@ -84,15 +85,13 @@ HTTPS. All business logic — availability, pricing, eligibility and
 authorisation — is enforced server-side; client-side validation exists for
 usability only.
 
-Three external services are integrated behind interfaces so that each can be
+Two external services are integrated behind interfaces so that each can be
 replaced or mocked:
 
 - **Payment Gateway** — authorisation, capture and refund. No card data is
   stored, logged or transmitted by VRMS.
-- **Notification Service** — transactional e-mail and SMS, queued so that a
-  provider outage cannot fail a booking transaction.
-- **Maps Service** — geocoding and distance for branch sorting and delivery
-  address validation.
+- **Notification Service** — transactional e-mail, SMS and push, queued so
+  that a provider outage cannot fail a booking transaction.
 
 Concurrency safety for bookings is enforced at the database level using a
 PostgreSQL range exclusion constraint, so no two Confirmed or Active bookings
@@ -102,56 +101,50 @@ for the same vehicle can ever overlap.
 
 ## Getting Started
 
+All commands below are for **Windows PowerShell**, run from the repository
+root unless a `cd` says otherwise. PostgreSQL and Valkey run in Docker;
+Django runs natively in a Python virtual environment.
+
 ### Prerequisites
 
 - Python 3.12
-- Node.js 20 LTS
-- PostgreSQL 16
-- Redis 7
+- Node.js 22 LTS, version 22.22 or later (Vite 8, Vitest 5 and jsdom require it)
+- Docker Desktop (runs PostgreSQL 16 and Valkey 8 via `docker-compose.yml`)
 - Git
 
 ### Clone
 
-```bash
+```powershell
 git clone https://github.com/rohansd05/vehicle-rental-management-system.git
 cd vehicle-rental-management-system
 ```
 
+### Start PostgreSQL and Valkey
+
+```powershell
+docker compose up -d
+docker compose ps        # both services should report "healthy"
+```
+
 ### Backend setup
 
-```bash
+```powershell
 cd backend
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-# macOS / Linux
-source venv/bin/activate
-
-pip install -r requirements-dev.txt
+py -3.12 -m venv venv                       # skip if backend\venv already exists
+.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env                 # then edit .env
+.\venv\Scripts\python.exe manage.py migrate
+.\venv\Scripts\python.exe manage.py createsuperuser
 ```
 
-Create the database:
-
-```bash
-psql -U postgres -c "CREATE DATABASE vrms;"
-psql -U postgres -c "CREATE USER vrms_user WITH PASSWORD 'your_password';"
-psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE vrms TO vrms_user;"
-```
-
-Apply migrations and create an administrator:
-
-```bash
-cp ../.env.example .env      # then edit .env
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py loaddata fixtures/demo_data.json
-```
+Always call the venv's interpreter (`.\venv\Scripts\python.exe`) or activate
+the venv first (`.\venv\Scripts\Activate.ps1`), so that no other Python
+installation on the machine is used.
 
 ### Frontend setup
 
-```bash
-cd ../frontend
+```powershell
+cd frontend
 npm install
 ```
 
@@ -159,21 +152,27 @@ npm install
 
 ## Configuration
 
-All configuration is read from `backend/.env`. Copy `.env.example` and fill in
-your own values. Never commit `.env`.
+All backend configuration is read from `backend/.env`. Copy
+`backend/.env.example` to `backend/.env` and fill in your own values. Never
+commit `.env`.
 
 | Variable | Description |
 |---|---|
 | `SECRET_KEY` | Django secret key |
 | `DEBUG` | `True` in development only |
-| `DATABASE_URL` | `postgres://user:pass@localhost:5432/vrms` |
-| `REDIS_URL` | `redis://localhost:6379/0` |
-| `PAYMENT_GATEWAY_KEY_ID` | Gateway test-mode key |
-| `PAYMENT_GATEWAY_KEY_SECRET` | Gateway test-mode secret |
-| `SMS_ACCOUNT_SID` | SMS provider account identifier |
-| `SMS_AUTH_TOKEN` | SMS provider token |
-| `EMAIL_HOST` / `EMAIL_HOST_USER` | Mail service credentials |
+| `ALLOWED_HOSTS` | Comma-separated host names |
+| `CSRF_TRUSTED_ORIGINS` | Comma-separated origins, e.g. `http://localhost:5173` |
+| `DATABASE_URL` | `postgres://vrms:vrms_dev_password@localhost:5432/vrms` (matches `docker-compose.yml`) |
+| `REDIS_URL` | `redis://localhost:6379/0` (Valkey; Celery broker and result backend) |
+| `AGENCY_NAME` | Agency name shown by the API and UI (never hardcoded) |
+| `CURRENCY` | `INR` |
+| `PAYMENT_GATEWAY_BACKEND` | `mock` (sandbox implementation) |
+| `PAYMENT_GATEWAY_KEY_ID` / `PAYMENT_GATEWAY_KEY_SECRET` | Gateway test-mode credentials |
+| `NOTIFICATION_BACKEND` | `mock` (sandbox implementation) |
+| `SMS_ACCOUNT_SID` / `SMS_AUTH_TOKEN` | SMS provider credentials |
+| `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` / `EMAIL_USE_TLS` / `DEFAULT_FROM_EMAIL` | Mail service settings |
 | `MEDIA_URL_EXPIRY_SECONDS` | Signed document link lifetime (default 900) |
+| `SECURE_HSTS_SECONDS` | Production only: HSTS max-age |
 
 All external integrations run in **sandbox mode**. No live financial
 settlement takes place.
@@ -182,34 +181,30 @@ settlement takes place.
 
 ## Running the Application
 
-Four processes, each in its own terminal:
+Start PostgreSQL and Valkey (`docker compose up -d`), then run four
+processes, each in its own PowerShell terminal:
 
-```bash
+```powershell
 # 1. API server
-cd backend && python manage.py runserver
+cd backend; .\venv\Scripts\python.exe manage.py runserver
 
-# 2. Celery worker
-cd backend && celery -A config worker -l info
+# 2. Celery worker (--pool=solo is required on Windows)
+cd backend; .\venv\Scripts\celery.exe -A config worker -l info --pool=solo
 
 # 3. Celery Beat scheduler
-cd backend && celery -A config beat -l info
+cd backend; .\venv\Scripts\celery.exe -A config beat -l info
 
-# 4. Frontend dev server
-cd frontend && npm run dev
+# 4. Frontend dev server (proxies /api, /admin and /static to port 8000)
+cd frontend; npm run dev
 ```
 
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:5173 |
 | API | http://localhost:8000/api/v1/ |
+| Health check | http://localhost:8000/api/v1/health/ |
 | API docs (Swagger) | http://localhost:8000/api/docs/ |
 | Django admin | http://localhost:8000/admin/ |
-
-Alternatively, bring up Postgres and Redis with Docker:
-
-```bash
-docker compose up -d
-```
 
 ### Demo accounts
 
@@ -224,18 +219,22 @@ docker compose up -d
 
 ## Testing
 
-```bash
-cd backend
+PostgreSQL must be running (`docker compose up -d`); the test settings use it.
 
-pytest                                    # full suite
-pytest --cov=apps --cov-report=html       # with coverage report
-pytest apps/bookings/tests/ -v            # one app
-pytest -m concurrency                     # concurrency suite only
+```powershell
+cd backend
+.\venv\Scripts\python.exe -m pytest                                  # full suite
+.\venv\Scripts\python.exe -m pytest --cov=apps --cov-report=html     # with coverage report
+.\venv\Scripts\python.exe -m pytest apps/bookings/tests/ -v          # one app
+.\venv\Scripts\python.exe -m pytest -m concurrency                   # concurrency suite only
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m black --check .
 ```
 
-```bash
+```powershell
 cd frontend
-npm run test
+npm run test -- --run
+npm run lint
 ```
 
 Coverage targets: at least 70% of business logic overall, and 100% of the
@@ -248,8 +247,9 @@ pricing, availability and settlement logic.
 Interactive documentation is generated from the code and served at
 `/api/docs/`. To export the schema:
 
-```bash
-python manage.py spectacular --file ../docs/api/openapi.yaml
+```powershell
+cd backend
+.\venv\Scripts\python.exe manage.py spectacular --file ..\docs\api\openapi.yaml
 ```
 
 ---
