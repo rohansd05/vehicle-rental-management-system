@@ -1,17 +1,22 @@
 """Accounts models.
 
-Phase 0 holds only the minimal custom user, created before the first migrate
-so AUTH_USER_MODEL never has to change. It carries the attributes of the
-Exp 3 «interface» User (name, address, mobile_no, email, password). The
-role-specific classes (Customer, BranchStaff, MaintenanceTechnician,
-Administrator, BranchManager) are added in Phase 1.
+The Exp 3 «interface» User is accounts.User (name, address, mobile_no,
+email, password). Each implementing class (Customer, BranchStaff,
+MaintenanceTechnician, Administrator) is a profile with a OneToOneField to
+User; BranchManager extends Administrator (multi-table inheritance). Field
+mappings and SRS additions are listed in docs/model-mapping.md.
 
 Owner: Rohan (WBS 1.4.1). Only the owner edits this file or its migrations.
 """
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
+
+from apps.core.choices import VehicleType
+from apps.core.models import TimeStampedModel
 
 
 class UserManager(BaseUserManager):
@@ -71,3 +76,179 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self) -> str:
         return self.email
+
+
+# ─── Profiles (Exp 3: classes implementing «interface» User) ──────────────
+
+
+class Customer(TimeStampedModel):
+    """Exp 3 Customer. A member of the public who books vehicles (SRS 2.2)."""
+
+    customer_id = models.BigAutoField(primary_key=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="customer"
+    )
+    date_of_birth = models.DateField()  # BR-2 minimum age
+    is_blacklisted = models.BooleanField(default=False)  # BR-4
+    # BR-4, Pay.Dues: amount not recovered from the deposit; blocks new bookings.
+    outstanding_due = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # SA-4: an emergency contact is recorded for every customer.
+    emergency_contact_name = models.CharField(max_length=150)
+    emergency_contact_mobile = models.CharField(max_length=15)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(outstanding_due__gte=0), name="accounts_customer_due_not_negative"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Customer {self.customer_id}: {self.user}"
+
+
+class MaintenanceTechnician(TimeStampedModel):
+    """Exp 3 MaintenanceTechnician. Agency or contracted workshop (SRS 2.2)."""
+
+    technician_id = models.BigAutoField(primary_key=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="maintenance_technician"
+    )
+    workshop = models.CharField(max_length=150)
+
+    def __str__(self) -> str:
+        return f"Technician {self.technician_id}: {self.user}"
+
+
+class Administrator(TimeStampedModel):
+    """Exp 3 Administrator. admin_pass maps to User.password (one bcrypt hash, SE-2)."""
+
+    admin_id = models.BigAutoField(primary_key=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="administrator"
+    )
+
+    def __str__(self) -> str:
+        return f"Administrator {self.admin_id}: {self.user}"
+
+
+class BranchStaff(TimeStampedModel):
+    """Exp 3 BranchStaff. branch_id maps to the branch foreign key."""
+
+    staff_id = models.BigAutoField(primary_key=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="branch_staff"
+    )
+    # Branch ◇ BranchStaff (Exp 3 aggregation): staff exist independently.
+    branch = models.ForeignKey("fleet.Branch", on_delete=models.PROTECT, related_name="staff")
+
+    class Meta:
+        verbose_name_plural = "branch staff"
+
+    def __str__(self) -> str:
+        return f"Staff {self.staff_id}: {self.user}"
+
+
+class BranchManager(Administrator):
+    """Exp 3 BranchManager extends Administrator: limited to one branch (SRS 2.2)."""
+
+    branch = models.ForeignKey("fleet.Branch", on_delete=models.PROTECT, related_name="managers")
+
+    def __str__(self) -> str:
+        return f"Branch manager {self.admin_id}: {self.user} ({self.branch})"
+
+
+# ─── Licence (Customer ◆ Licence) ─────────────────────────────────────────
+
+
+class Licence(TimeStampedModel):
+    """Exp 3 Licence; Appendix A licence. Composition: owned by one Customer."""
+
+    class Status(models.TextChoices):
+        NOT_SUBMITTED = "Not Submitted", "Not Submitted"
+        PENDING_VERIFICATION = "Pending Verification", "Pending Verification"
+        VERIFIED = "Verified", "Verified"
+        REJECTED = "Rejected", "Rejected"
+        EXPIRED = "Expired", "Expired"
+
+    customer = models.OneToOneField(Customer, on_delete=models.CASCADE, related_name="licence")
+    licence_number = models.CharField(max_length=32, blank=True)
+    # Exp 3 Licence.category -> LicenceCategory rows (Appendix A: 1:m licence category).
+    expiry_date = models.DateField(null=True, blank=True)  # BR-2: valid for the whole rental
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.NOT_SUBMITTED)
+    issuing_authority = models.CharField(max_length=150, blank=True)  # Appendix A
+    issue_date = models.DateField(null=True, blank=True)  # Appendix A
+    # Appendix A front/back image; SI-3: only the object key is stored.
+    front_image = models.FileField(upload_to="licences/", blank=True)
+    back_image = models.FileField(upload_to="licences/", blank=True)
+    # Licence.verify(); SE-10 audits licence verification decisions.
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="licences_verified",
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["licence_number"],
+                condition=~Q(licence_number=""),
+                name="accounts_licence_number_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.licence_number or f"Licence of {self.customer}"
+
+
+class LicenceCategory(models.Model):
+    """One endorsed category of a licence (Appendix A: 1:m licence category; BR-3)."""
+
+    licence = models.ForeignKey(Licence, on_delete=models.CASCADE, related_name="categories")
+    category = models.CharField(max_length=16, choices=VehicleType.choices)
+
+    class Meta:
+        verbose_name_plural = "licence categories"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["licence", "category"], name="accounts_licencecategory_unique"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.licence}: {self.category}"
+
+
+# ─── One-time passwords (SE-7) ────────────────────────────────────────────
+
+
+class OneTimePassword(models.Model):
+    """SE-7: proves possession of a mobile number or e-mail address.
+
+    Only a hash of the code is stored, never the code itself.
+    """
+
+    class Purpose(models.TextChoices):
+        REGISTRATION = "Registration", "Registration"
+        MOBILE_CHANGE = "Mobile Change", "Mobile Change"
+        EMAIL_CHANGE = "Email Change", "Email Change"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="one_time_passwords"
+    )
+    purpose = models.CharField(max_length=32, choices=Purpose.choices)
+    destination = models.CharField(max_length=254, help_text="Mobile number or e-mail address.")
+    code_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["user", "purpose", "-created_at"])]
+
+    def __str__(self) -> str:
+        return f"OTP {self.purpose} for {self.user} (expires {self.expires_at:%Y-%m-%d %H:%M})"
