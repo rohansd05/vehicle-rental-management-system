@@ -166,6 +166,7 @@ commit `.env`.
 | `REDIS_URL` | `redis://localhost:6379/0` (Valkey; Celery broker and result backend) |
 | `AGENCY_NAME` | Agency name shown by the API and UI (never hardcoded) |
 | `CURRENCY` | `INR` |
+| `AGENCY_TAX_REGISTRATION` | Tax registration (e.g. GSTIN) printed on every invoice (Pay.Invoice) |
 | `PAYMENT_GATEWAY_BACKEND` | `mock` (sandbox implementation) |
 | `PAYMENT_GATEWAY_KEY_ID` / `PAYMENT_GATEWAY_KEY_SECRET` | Gateway test-mode credentials |
 | `NOTIFICATION_BACKEND` | `mock` (sandbox implementation) |
