@@ -130,6 +130,11 @@ supersede section 7 ("Open decisions") of `docs/VRMS_Handoff.md`.
 - **D18 Categories:** licence categories are Car and Two-Wheeler (BR-2,
   BR-3); `VehicleCategory` (Hatchback, SUV, ...) is the tariff category.
   Both confirmed.
+- **D19 Tokens (SE-9):** access 5 min, refresh 30 min with rotation and
+  blacklisting; the frontend refreshes only on user activity.
+- **D20 Proposed auth values:** throttle rates, OTP length and resend
+  cooldown, mobile format, licence image limits and related behaviours
+  (A1-A16) await team approval; password reset is not built.
 
 ## Ownership
 

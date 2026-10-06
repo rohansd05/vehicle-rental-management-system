@@ -259,6 +259,52 @@ BR-3 endorsement check compares a licence category with
 `vehicle.category.vehicle_type`. Tariffs, search filters and reports work
 on the finer `VehicleCategory`.
 
+## D19 — Session and token lifetimes (SE-9)
+
+**Decision.** SimpleJWT access tokens live 5 minutes and refresh tokens 30
+minutes. Refresh tokens rotate: each refresh returns a new pair and the
+used refresh token is blacklisted. Sign-out blacklists the refresh token;
+a password change blacklists all of the user's refresh tokens. A disabled
+account is refused on every request and on refresh.
+
+**Rationale.** SE-9 requires a session to expire after 30 minutes of
+inactivity. With JWTs the refresh token is the session: the client
+exchanges it whenever the user is active, and each exchange starts a fresh
+30-minute window. If the user does nothing for 30 minutes, the last
+refresh token expires and they must sign in again. A client may use an
+access token for up to 5 minutes without refreshing, so the effective idle
+limit is 25–30 minutes, never longer than SE-9 allows. The short access
+lifetime also limits how long a stolen access token is useful, and lets
+Fleet.Users ("disabling an account shall immediately end that user's
+sessions") take effect within one request. **Frontend obligation:** refresh
+only in response to user activity, never on a background timer, or the
+session would never go idle. The second half of SE-9 (re-authentication
+before a payment or refund) is enforced in the payment phase.
+
+## D20 — Proposed authentication values (awaiting team approval)
+
+The SRS does not specify these. They are implemented as listed and stay
+**Proposed** until the team confirms or changes them.
+
+| # | Item | Proposal |
+|---|---|---|
+| A1 | Throttle rates | register 10/hour per IP; sign-in 10/minute per IP; verify OTP 10/minute; resend OTP 5/hour; refresh and sign-out 30/minute; password change 5/hour per user; profile 30/minute; licence submission 10/hour. SE-8 lockout (per account) is separate. |
+| A2 | OTP code length | 6 digits (`OTP_CODE_LENGTH`) |
+| A3 | OTP resend cooldown | 60 seconds (`OTP_RESEND_COOLDOWN`), keyed by the e-mail typed, so it applies whether or not the account exists |
+| A4 | Mobile number format | 10–15 digits with an optional leading `+` |
+| A5 | Licence image types and size | JPG, JPEG, PNG (HI-1 speaks only of camera images, so no PDF); at most 5 MB each (`LICENCE_IMAGE_MAX_BYTES`) |
+| A6 | Both licence images required | Appendix A lists front and back image without parentheses, which the data dictionary uses for optional items |
+| A7 | Password reset by OTP | **Not built**: the SRS has no password-reset requirement. Proposal: OTP to the registered mobile, then a new password, then every session ends |
+| A8 | Duplicate e-mail at registration | Answers 400 "already exists", which shows that the address is registered. SE-8 forbids that only for failed sign-in. Alternative: always answer 201 and e-mail the owner instead |
+| A9 | Sign-in before verification | The same generic 401 as a wrong password; the UI takes a new registrant straight to the verification step |
+| A10 | Where the mobile-change OTP goes | To the new number, proving possession of it (SE-7); the change applies only after the code is confirmed |
+| A11 | Password change ends every session | Including the current one; the user signs in again |
+| A12 | Licence verification queue | Not branch-scoped: licences belong to customers, not branches, so all branch staff and administrators see every pending licence |
+| A13 | Licence resubmission | Allowed in any state (for example after a renewal); the licence returns to Pending Verification |
+| A14 | Lockout response | HTTP 403 with `code: account_locked`; the same response for unknown accounts |
+| A15 | Lockout e-mail | Sent once per lock, even if more attempts arrive during it |
+| A16 | Licence numbers | Stored in upper case so the uniqueness check ignores case |
+
 ---
 
 ## Third-party packages and licences

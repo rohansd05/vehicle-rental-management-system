@@ -165,6 +165,7 @@ commit `.env`.
 | `SECRET_KEY` | Django secret key |
 | `DEBUG` | `True` in development only |
 | `ALLOWED_HOSTS` | Comma-separated host names |
+| `NUM_PROXIES` | Reverse proxies in front of Django: `0` locally, `1` behind Caddy (client IP for throttling and audit) |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated origins, e.g. `http://localhost:5173` |
 | `DATABASE_URL` | `postgres://vrms:vrms_dev_password@localhost:5432/vrms` (matches `docker-compose.yml`) |
 | `REDIS_URL` | `redis://localhost:6379/0` (Valkey; Celery broker and result backend) |
@@ -254,12 +255,32 @@ pricing, availability and settlement logic.
 ## API Documentation
 
 Interactive documentation is generated from the code and served at
-`/api/docs/`. To export the schema:
+`/api/docs/` (public in development; administrators only in production,
+D12). To export the schema:
 
 ```powershell
 cd backend
 .\venv\Scripts\python.exe manage.py spectacular --file ..\docs\api\openapi.yaml
 ```
+
+### Authentication and licence endpoints (`/api/v1/`)
+
+| Method and path | Who may call it |
+|---|---|
+| `POST auth/register/` | Anyone (creates a customer account; staff accounts are created in the Django admin) |
+| `POST auth/verify-otp/`, `POST auth/resend-otp/` | Anyone |
+| `POST auth/login/`, `POST auth/refresh/` | Anyone |
+| `POST auth/logout/`, `POST auth/password/change/` | Any signed-in user |
+| `GET`/`PATCH me/`, `POST me/verify-mobile/` | Any signed-in user |
+| `GET`/`POST licence/` | Customer |
+| `GET licences/`, `POST licences/{id}/approve/`, `POST licences/{id}/reject/` | Branch Staff, Administrator |
+| `GET files/{token}/` | Anyone holding a valid signed link (expires after 15 minutes, SI-3) |
+
+Sign-in returns a JWT pair: send `Authorization: Bearer <access>` and
+refresh with `auth/refresh/` while the user is active (D19). In development
+the OTP SMS is printed by the Celery worker
+(`celery -A config worker --pool=solo -l info`); start the worker before
+registering.
 
 ---
 
