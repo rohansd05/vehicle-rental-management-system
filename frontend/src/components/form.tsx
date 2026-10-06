@@ -30,9 +30,9 @@ export function Field({
       <Label htmlFor={id}>{label}</Label>
       {children}
       {hint ? (
-        <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+        <div id={`${id}-hint`} className="text-xs text-muted-foreground">
           {hint}
-        </p>
+        </div>
       ) : null}
       {error ? (
         <p id={`${id}-error`} className="flex items-start gap-1 text-sm text-destructive">
