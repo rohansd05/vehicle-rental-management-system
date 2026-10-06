@@ -4,7 +4,7 @@ from django.contrib import admin
 
 from apps.core.admin import AuditedModelAdmin
 
-from .models import AddOn, FuelPrice, Tariff
+from .models import AddOn, DiscountCode, FuelPrice, Tariff
 
 
 @admin.register(Tariff)
@@ -55,3 +55,20 @@ class FuelPriceAdmin(AuditedModelAdmin):
     list_display = ("fuel_type", "price_per_unit", "effective_from", "defined_by")
     list_filter = ("fuel_type",)
     date_hierarchy = "effective_from"
+
+
+@admin.register(DiscountCode)
+class DiscountCodeAdmin(AuditedModelAdmin):
+    list_display = (
+        "code",
+        "discount_type",
+        "value",
+        "valid_from",
+        "valid_to",
+        "is_active",
+        "times_used",
+        "usage_limit",
+    )
+    list_filter = ("discount_type", "is_active")
+    search_fields = ("code",)
+    readonly_fields = ("times_used",)

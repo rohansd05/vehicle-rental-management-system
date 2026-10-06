@@ -39,7 +39,7 @@ from apps.fleet.models import (
     VehicleCategory,
     VehicleDocument,
 )
-from apps.pricing.models import AddOn, FuelPrice, Tariff
+from apps.pricing.models import AddOn, DiscountCode, FuelPrice, Tariff
 
 DEMO_PASSWORD = "Demo@1234"
 IST = ZoneInfo("Asia/Kolkata")
@@ -92,6 +92,13 @@ ADD_ONS = [
     ("Additional named driver", "200", VehicleType.CAR),
     ("Doorstep delivery", "300", ""),
 ]
+
+# D17: one percent and one fixed demo code (code, type, value).
+DISCOUNT_CODES = [
+    ("WELCOME10", DiscountCode.DiscountType.PERCENT, "10.00"),
+    ("FLAT500", DiscountCode.DiscountType.FIXED, "500.00"),
+]
+DEMO_DISCOUNT_VALID_TO = datetime(2026, 12, 31, 23, 59, tzinfo=IST)
 
 FUEL_PRICES = {
     FuelType.PETROL: "104.21",
@@ -162,7 +169,8 @@ def demo_registrations() -> list[str]:
 class Command(BaseCommand):
     help = (
         "Load DEMO data (fictitious, for development and demonstration only): 5 Mumbai-area "
-        "branches, vehicle categories with current tariffs, add-ons, fuel prices, 20 vehicles "
+        "branches, vehicle categories with current tariffs, add-ons, 2 discount codes, fuel "
+        "prices, 20 vehicles "
         "with a document each, and the README demo accounts (password Demo@1234). "
         "Idempotent; --reset removes the demo data and loads it again."
     )
@@ -207,6 +215,7 @@ class Command(BaseCommand):
         administrator = users[ADMIN.email].administrator
         categories = self._seed_categories_and_tariffs(administrator)
         self._seed_add_ons()
+        self._seed_discount_codes()
         self._seed_fuel_prices(administrator)
         self._seed_vehicles(branches, categories)
 
@@ -331,6 +340,19 @@ class Command(BaseCommand):
             )
             self._count("add-ons", created)
 
+    def _seed_discount_codes(self) -> None:
+        for code, discount_type, value in DISCOUNT_CODES:
+            _, created = DiscountCode.objects.get_or_create(
+                code=code,
+                defaults={
+                    "discount_type": discount_type,
+                    "value": Decimal(value),
+                    "valid_from": DEMO_EFFECTIVE_FROM,
+                    "valid_to": DEMO_DISCOUNT_VALID_TO,
+                },
+            )
+            self._count("discount codes", created)
+
     def _seed_fuel_prices(self, administrator) -> None:
         for fuel_type, price in FUEL_PRICES.items():
             _, created = FuelPrice.objects.get_or_create(
@@ -426,6 +448,7 @@ class Command(BaseCommand):
             Customer.objects.filter(user__email__in=demo_emails).delete()
             self._delete_audited(User.objects.filter(email__in=demo_emails))
             AddOn.objects.filter(name__in=[name for name, _, _ in ADD_ONS]).delete()
+            DiscountCode.objects.filter(code__in=[code for code, _, _ in DISCOUNT_CODES]).delete()
             VehicleCategory.objects.filter(name__in=CATEGORIES).delete()
             self._delete_audited(Branch.objects.filter(branch_name__in=BRANCHES))
         except ProtectedError as exc:

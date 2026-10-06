@@ -4,7 +4,8 @@ Owner: Nidhi (WBS 1.4.2). Only the owner edits this file or its migrations.
 """
 
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Q
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 from apps.core.choices import FuelType, VehicleType
@@ -135,3 +136,51 @@ class FuelPrice(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.fuel_type} {self.price_per_unit} from {self.effective_from:%Y-%m-%d}"
+
+
+class DiscountCode(TimeStampedModel):
+    """D17 (G5): an admin-managed discount for BR-6 ("less any discount").
+
+    The code is unique regardless of case; a Percent value lies in (0, 100].
+    """
+
+    class DiscountType(models.TextChoices):
+        PERCENT = "Percent", "Percent"
+        FIXED = "Fixed", "Fixed"
+
+    code = models.CharField(max_length=32)
+    discount_type = models.CharField(max_length=16, choices=DiscountType.choices)
+    value = models.DecimalField(
+        max_digits=12, decimal_places=2, help_text="Percent (0-100) or a fixed amount."
+    )
+    valid_from = models.DateTimeField()
+    valid_to = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    usage_limit = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Empty for unlimited use."
+    )
+    times_used = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["code"]
+        constraints = [
+            models.UniqueConstraint(Lower("code"), name="pricing_discountcode_code_ci_unique"),
+            models.CheckConstraint(
+                condition=Q(value__gt=0), name="pricing_discountcode_value_positive"
+            ),
+            models.CheckConstraint(
+                condition=~Q(discount_type="Percent") | Q(value__lte=100),
+                name="pricing_discountcode_percent_max_100",
+            ),
+            models.CheckConstraint(
+                condition=Q(valid_to__gt=F("valid_from")),
+                name="pricing_discountcode_valid_window",
+            ),
+            models.CheckConstraint(
+                condition=Q(usage_limit__isnull=True) | Q(times_used__lte=F("usage_limit")),
+                name="pricing_discountcode_within_usage_limit",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.code

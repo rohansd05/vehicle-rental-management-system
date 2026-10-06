@@ -7,7 +7,7 @@ import factory
 from django.utils import timezone
 
 from apps.accounts.tests.factories import CustomerFactory
-from apps.bookings.models import Booking, BookingAddOn
+from apps.bookings.models import Booking, BookingAddOn, Rating
 from apps.fleet.tests.factories import CarFactory
 from apps.pricing.tests.factories import AddOnFactory, TariffFactory
 
@@ -46,3 +46,13 @@ class BookingAddOnFactory(factory.django.DjangoModelFactory):
     add_on = factory.SubFactory(AddOnFactory)
     quantity = 1
     daily_rate = factory.SelfAttribute("add_on.daily_rate")
+
+
+class RatingFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Rating
+
+    booking = factory.SubFactory(BookingFactory, status=Booking.Status.COMPLETED)
+    vehicle_rating = 5
+    service_rating = 4
+    comment = "Clean car, quick handover."
