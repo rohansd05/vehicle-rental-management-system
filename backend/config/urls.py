@@ -26,7 +26,7 @@ else:
 
 api_v1 = [
     path("", include("apps.core.urls")),
-    path("accounts/", include("apps.accounts.urls")),
+    path("", include("apps.accounts.urls")),  # auth/, me/, licence/, licences/
     path("fleet/", include("apps.fleet.urls")),
     path("pricing/", include("apps.pricing.urls")),
     path("bookings/", include("apps.bookings.urls")),

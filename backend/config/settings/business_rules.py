@@ -79,6 +79,10 @@ PICKUP_CODE_LENGTH = 6
 # SE-7 one-time passwords. D15 (G3): lifetime and attempt limit per code.
 OTP_LIFETIME = timedelta(minutes=10)
 OTP_MAX_ATTEMPTS = 5
+# Proposed (SRS silent; docs/decisions.md D20): code length and the minimum
+# wait before another code can be requested.
+OTP_CODE_LENGTH = 6
+OTP_RESEND_COOLDOWN = timedelta(seconds=60)
 
 # SE-8: account lockout (configured with django-axes in Phase 1B, D11).
 LOGIN_FAILURE_LIMIT = 5
