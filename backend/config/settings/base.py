@@ -139,6 +139,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
+    # Proxies in front of Django (Caddy in production, D1). Used for the
+    # client IP in throttling and audit entries. 0 = use REMOTE_ADDR.
+    "NUM_PROXIES": env.int("NUM_PROXIES", default=0),
 }
 
 # TODO(SE-9): placeholder lifetimes. SE-9 requires a session to expire after

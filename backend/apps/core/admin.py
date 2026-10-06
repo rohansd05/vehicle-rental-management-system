@@ -8,7 +8,7 @@ does this for changes made through the Django admin, inline rows included.
 from django.conf import settings
 from django.contrib import admin
 
-from .audit import entity_type, snapshot
+from .audit import record_audit, snapshot
 from .models import AuditLog
 
 # D7: the agency name comes only from settings.
@@ -17,20 +17,8 @@ admin.site.site_title = "VRMS administration"
 admin.site.index_title = "Vehicle Rental Management System"
 
 
-def _client_ip(request) -> str | None:
-    return request.META.get("REMOTE_ADDR") or None
-
-
 def record_change(request, action: str, obj, before: dict | None, after: dict | None) -> None:
-    AuditLog.objects.record(
-        actor=request.user if request.user.is_authenticated else None,
-        action=action,
-        entity_type=entity_type(obj),
-        entity_id=obj.pk,
-        before=before,
-        after=after,
-        ip_address=_client_ip(request),
-    )
+    record_audit(request.user, action, obj, before, after, request)
 
 
 def _stored_snapshot(obj) -> dict | None:
