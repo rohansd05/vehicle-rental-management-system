@@ -135,6 +135,7 @@ local wall-clock times.
 | `Licence.verified_by`, `verified_at` | Licence.verify(); SE-10 audits verification decisions |
 | `LicenceCategory` | Appendix A 1:m licence category; BR-3 |
 | `OneTimePassword` (purpose, destination, `code_hash`, expiry, attempts, consumed) | SE-7; only a hash of the code is stored |
+| `Licence.rejection_reason` (Phase 1B) | SE-10 licence verification decision; a rejection always states why |
 
 ### fleet
 | Field / model | SRS source |
@@ -165,6 +166,7 @@ master data, and lets Tariff reference the category with an FK.
 | No edit or delete once `effective_from` has passed | BR-13, Fleet.Tariff.History |
 | `AddOn` (name, `daily_rate`, active) | Book.Addons, BR-7 |
 | `FuelPrice` (fuel type, price per unit, effective from, defined by) | BR-12 "prevailing fuel or electricity price" |
+| `DiscountCode` (case-insensitive code, Percent/Fixed value, validity, usage limit) (Phase 1B) | BR-6 "less any discount"; D17 |
 
 ### bookings
 | Field / model | SRS source |
@@ -182,6 +184,8 @@ master data, and lets Tariff reference the category with an FK.
 | `Booking.distance_travelled` | Return.Complete |
 | `Booking.blocked_period` + ExclusionConstraint | Book.NoDouble, Book.Concurrent, Book.Done.Block, BR-1, Reliability-1 |
 | `BookingAddOn` (quantity, `daily_rate` snapshot, detail) | Book.Addons, BR-7, BR-13 |
+| `Booking.discount_code`, `discount_amount` (Phase 1B) | BR-6, D17 |
+| `Rating` (OneToOne booking, vehicle and service 1–5, comment) (Phase 1B) | Search.Detail, Search.Filter; D13 |
 
 The exclusion constraint covers (`vehicle` =, `blocked_period` &&) for
 status in (Pending Payment, Confirmed, Active). Pending Payment is
@@ -249,7 +253,7 @@ customers (Book.Hold). `blocked_period` = `[pickup, return + 60 min)`.
 
 These follow from the SRS but involve a reading the team should confirm.
 
-1. **Licence categories are the vehicle types.** BR-3 says a customer may
+1. **Licence categories are the vehicle types. Confirmed (D18).** BR-3 says a customer may
    rent "only those vehicle categories for which the licence is endorsed",
    and BR-2 and BR-3 distinguish only two-wheelers and cars. So
    `LicenceCategory.category` is Car or Two-Wheeler, and the BR-3 check
@@ -292,12 +296,15 @@ choosing something. Each needs a yes/no or a correction from the team.
 | P16 | Invoice tax registration source | `settings.AGENCY_TAX_REGISTRATION` (env) | Copied onto each invoice at issue |
 | P17 | Field lengths | all `max_length` values | Chosen for Indian formats (e.g. registration 16, mobile 15) |
 
-Not implemented, because each needs a decision first:
+Proposed values for authentication, OTPs and licence uploads (Phase 1B)
+are listed in `docs/decisions.md`, D20 (A1–A16).
 
-| # | Gap | SRS reference | Proposal |
+### Gaps (all closed in Phase 1B)
+
+| # | Gap | SRS reference | Resolution |
 |---|---|---|---|
-| G1 | **Vehicle ratings.** The SRS shows an average rating and filters by it, but has no requirement that captures a rating. | Search.Detail, Search.Filter | A `Rating` per completed booking (vehicle 1–5, service 1–5, comment), owned by bookings |
-| G2 | **Tax rate.** BR-6 adds "taxes" but gives no rate. | BR-6, Pay.Invoice | A `TAX_RATE_PERCENT` setting, value supplied by the team |
-| G3 | **OTP lifetime and attempt limit.** | SE-7 | Settings constants, values supplied by the team |
-| G4 | **Odometer plausibility limit.** Return.Odometer refers to "the configured plausibility limit" without a value. | Return.Odometer | A setting, value supplied by the team |
-| G5 | **Discounts.** BR-6 subtracts "any discount" but no discount source is defined. | BR-6 | Supported only as a negative `InvoiceLine` (Discount) until defined |
+| G1 | **Vehicle ratings.** The SRS shows an average rating and filters by it, but has no requirement that captures a rating. | Search.Detail, Search.Filter | D13: `bookings.Rating` per Completed booking; average computed, never stored |
+| G2 | **Tax rate.** BR-6 adds "taxes" but gives no rate. | BR-6, Pay.Invoice | D14: `TAX_RATE_PERCENT = 18.00`, **a placeholder awaiting confirmation** |
+| G3 | **OTP lifetime and attempt limit.** | SE-7 | D15: 10 minutes, 5 attempts |
+| G4 | **Odometer plausibility limit.** | Return.Odometer | D16: none beyond "not lower than at handover" (AS-4) |
+| G5 | **Discounts.** BR-6 subtracts "any discount" but no source is defined. | BR-6 | D17: `pricing.DiscountCode`; Booking records the code and amount |

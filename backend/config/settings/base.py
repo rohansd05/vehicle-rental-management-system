@@ -40,6 +40,8 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "drf_spectacular_sidecar",
     "django_celery_beat",
+    "rest_framework_simplejwt.token_blacklist",  # logout and refresh rotation
+    "axes",  # SE-8 account lockout (D11)
     # VRMS
     "apps.core",
     "apps.accounts",
@@ -62,6 +64,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Last: turns an axes lockout flag into the lockout response (SE-8).
+    "axes.middleware.AxesMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -91,6 +95,26 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ─── Auth ────────────────────────────────────────────────
 AUTH_USER_MODEL = "accounts.User"
+
+# The axes backend goes first so a locked-out account is refused before the
+# password is even checked (SE-8).
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+# ─── SE-8 lockout (django-axes, D11) ─────────────────────
+# Five consecutive failed sign-ins lock the account (not the IP address) for
+# 15 minutes; a successful sign-in resets the count ("consecutive").
+AXES_FAILURE_LIMIT = LOGIN_FAILURE_LIMIT  # noqa: F405
+AXES_COOLOFF_TIME = LOGIN_LOCKOUT_DURATION  # noqa: F405
+AXES_LOCKOUT_PARAMETERS = ["username"]
+AXES_RESET_ON_SUCCESS = True
+# Attempts during a lock do not extend it: the lock lasts 15 minutes (SE-8).
+AXES_RESET_COOL_OFF_ON_FAILURE_DURING_LOCKOUT = False
+AXES_USERNAME_FORM_FIELD = "username"
+AXES_USERNAME_CALLABLE = "apps.accounts.lockout.axes_username"
+AXES_LOCKOUT_CALLABLE = "apps.accounts.lockout.lockout_response"
 
 # SE-2 / D4: bcrypt with a work factor of at least 12. The first entry hashes
 # every new password.
@@ -139,15 +163,36 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
+    # Proxies in front of Django (Caddy in production, D1). Used for the
+    # client IP in throttling and audit entries. 0 = use REMOTE_ADDR.
+    "NUM_PROXIES": env.int("NUM_PROXIES", default=0),
+    # Auth endpoints declare a throttle_scope. The SRS gives no rates, so these
+    # are proposed (docs/decisions.md, D20). Anonymous calls count per IP.
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_register": "10/hour",
+        "auth_login": "10/minute",
+        "auth_otp_verify": "10/minute",
+        "auth_otp_resend": "5/hour",
+        "auth_token": "30/minute",
+        "auth_password": "5/hour",
+        "auth_profile": "30/minute",
+        "licence_submit": "10/hour",
+    },
 }
 
-# TODO(SE-9): placeholder lifetimes. SE-9 requires a session to expire after
-# 30 minutes of inactivity, and re-authentication before a payment or refund.
-# Settle the token and refresh strategy in Phase 1.
+# SE-9: a session expires after 30 minutes of inactivity. The client trades
+# its refresh token for a new pair whenever the user is active; each refresh
+# token lives 30 minutes and is blacklisted once used. With no activity for
+# 30 minutes the last refresh token expires and the user must sign in again.
+# Access tokens are short (5 minutes) so a disabled account is cut off quickly
+# (Fleet.Users). Rationale in docs/decisions.md (D19). Re-authentication before
+# a payment or refund is enforced in the payment phase.
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
     "REFRESH_TOKEN_LIFETIME": timedelta(minutes=30),
     "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": False,  # the login view sends user_logged_in itself
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
@@ -161,6 +206,11 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "REST + JSON API documented with OpenAPI 3.0 (CO-4).",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # Several serializers have a "status" field; give each enum a clear name.
+    "ENUM_NAME_OVERRIDES": {
+        "LicenceStatusEnum": "apps.accounts.models.Licence.Status",
+        "HealthStatusEnum": ["ok", "degraded"],
+    },
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",
@@ -168,6 +218,16 @@ SPECTACULAR_SETTINGS = {
 
 # ─── Celery (broker and result backend: Valkey, D2) ──────
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+
+# Shared cache in Valkey: throttle counters and the OTP resend cooldown must
+# be shared by every gunicorn worker.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+        "KEY_PREFIX": "vrms",
+    }
+}
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ENABLE_UTC = True

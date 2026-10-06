@@ -30,6 +30,10 @@ RENTAL_PERIOD_MAXIMUM = timedelta(days=30)
 DAILY_BILLING_THRESHOLD = timedelta(hours=24)
 PART_HOUR_GRACE = timedelta(minutes=15)
 
+# BR-6 / Pay.Invoice taxes. D14 (G2): PLACEHOLDER awaiting confirmation by
+# the team; the SRS states no rate. Do not treat 18% as a confirmed rule.
+TAX_RATE_PERCENT = Decimal("18.00")
+
 # BR-7: helmets provided free with every two-wheeler rental, per rider.
 FREE_HELMETS_PER_RIDER = 1
 
@@ -72,6 +76,19 @@ BOOKING_REFERENCE_PREFIX = "VRMS"
 BOOKING_REFERENCE_REGEX = r"^VRMS-[0-9]{8}-[0-9]{4}$"
 PICKUP_CODE_LENGTH = 6
 
+# SE-7 one-time passwords. D15 (G3): lifetime and attempt limit per code.
+OTP_LIFETIME = timedelta(minutes=10)
+OTP_MAX_ATTEMPTS = 5
+# Proposed (SRS silent; docs/decisions.md D20): code length and the minimum
+# wait before another code can be requested.
+OTP_CODE_LENGTH = 6
+OTP_RESEND_COOLDOWN = timedelta(seconds=60)
+
 # SE-8: account lockout (configured with django-axes in Phase 1B, D11).
 LOGIN_FAILURE_LIMIT = 5
 LOGIN_LOCKOUT_DURATION = timedelta(minutes=15)
+
+# Licence images (Appendix A front/back image; HI-1 camera images; D3).
+# Proposed (SRS silent; docs/decisions.md D20): accepted types and size limit.
+LICENCE_IMAGE_EXTENSIONS = ("jpg", "jpeg", "png")
+LICENCE_IMAGE_MAX_BYTES = 5 * 1024 * 1024

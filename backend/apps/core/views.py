@@ -35,7 +35,7 @@ class HealthView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
 
-    @extend_schema(responses={200: HealthSerializer, 503: HealthSerializer})
+    @extend_schema(tags=["System"], responses={200: HealthSerializer, 503: HealthSerializer})
     def get(self, request: Request) -> Response:
         db_ok = database_reachable()
         payload = {

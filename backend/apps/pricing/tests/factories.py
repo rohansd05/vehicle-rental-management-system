@@ -9,7 +9,7 @@ from django.utils import timezone
 from apps.accounts.tests.factories import AdministratorFactory
 from apps.core.choices import FuelType
 from apps.fleet.tests.factories import VehicleCategoryFactory
-from apps.pricing.models import AddOn, FuelPrice, Tariff
+from apps.pricing.models import AddOn, DiscountCode, FuelPrice, Tariff
 
 
 class TariffFactory(factory.django.DjangoModelFactory):
@@ -46,3 +46,14 @@ class FuelPriceFactory(factory.django.DjangoModelFactory):
         lambda n: timezone.now() - timedelta(days=30) + timedelta(minutes=n)
     )
     defined_by = factory.SubFactory(AdministratorFactory)
+
+
+class DiscountCodeFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = DiscountCode
+
+    code = factory.Sequence(lambda n: f"SAVE{n:04d}")
+    discount_type = DiscountCode.DiscountType.PERCENT
+    value = Decimal("10.00")
+    valid_from = factory.LazyFunction(lambda: timezone.now() - timedelta(days=1))
+    valid_to = factory.LazyFunction(lambda: timezone.now() + timedelta(days=30))

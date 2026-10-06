@@ -6,7 +6,7 @@ Owner: Rohan (WBS 1.4.3). Only the owner edits this file or its migrations.
 from django.conf import settings
 from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
-from django.core.validators import MinValueValidator, RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.db.models import F, Q
@@ -73,6 +73,15 @@ class Booking(TimeStampedModel):
     handed_over_at = models.DateTimeField(null=True, blank=True)  # Handover.Activate
     returned_at = models.DateTimeField(null=True, blank=True)  # Return.Checklist
     distance_travelled = models.PositiveIntegerField(null=True, blank=True)  # Return.Complete
+    # BR-6 "less any discount"; D17.
+    discount_code = models.ForeignKey(
+        "pricing.DiscountCode",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="bookings",
+    )
+    discount_amount = _money(default=0)
     blocked_period = DateTimeRangeField(editable=False)
 
     class Meta:
@@ -111,6 +120,9 @@ class Booking(TimeStampedModel):
             models.CheckConstraint(
                 condition=Q(total_amount__gte=0) & Q(security_deposit__gte=0),
                 name="bookings_amounts_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=Q(discount_amount__gte=0), name="bookings_discount_not_negative"
             ),
         ]
 
@@ -163,3 +175,38 @@ class BookingAddOn(models.Model):
 
     def __str__(self) -> str:
         return f"{self.add_on} x{self.quantity} on {self.booking}"
+
+
+class Rating(models.Model):
+    """D13 (G1): a customer's rating of a completed booking.
+
+    Feeds the average rating shown and filtered on in search (Search.Detail,
+    Search.Filter); the average is computed, never stored. Only a Completed
+    booking may be rated; the rating service enforces that.
+    """
+
+    booking = models.OneToOneField(Booking, on_delete=models.PROTECT, related_name="rating")
+    vehicle_rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
+    )
+    service_rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
+    )
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(vehicle_rating__gte=1) & Q(vehicle_rating__lte=5),
+                name="bookings_rating_vehicle_1_to_5",
+            ),
+            models.CheckConstraint(
+                condition=Q(service_rating__gte=1) & Q(service_rating__lte=5),
+                name="bookings_rating_service_1_to_5",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.booking}: vehicle {self.vehicle_rating}/5, service {self.service_rating}/5"

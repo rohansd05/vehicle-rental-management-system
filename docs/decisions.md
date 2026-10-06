@@ -190,6 +190,121 @@ broken access control). Session authentication on these two views lets an
 administrator who is signed in to `/admin/` open the docs in a browser,
 which a JWT-only view would not allow.
 
+## D13 — Ratings (closes G1)
+
+**Decision.** A `bookings.Rating` model: one per Completed booking
+(OneToOne to Booking, PROTECT), with `vehicle_rating` and `service_rating`
+each 1–5 (database check constraints) and an optional comment. A vehicle's
+average rating is computed from its ratings when needed, never stored.
+"Only for Completed bookings" is enforced by the rating service.
+
+**Rationale.** Search.Detail displays and Search.Filter filters on an
+average customer rating, but the SRS defines no requirement that captures
+one. Tying a rating to a completed booking means only real renters rate,
+and at most once. Computing the average avoids a denormalised column that
+could drift (CO-5).
+
+## D14 — Tax rate (closes G2, placeholder)
+
+**Decision.** `TAX_RATE_PERCENT = Decimal("18.00")` in
+`config/settings/business_rules.py`. **This is a placeholder awaiting
+confirmation** by the team; the comment next to the setting says so.
+
+**Rationale.** BR-6 adds "taxes" and Pay.Invoice requires the taxes applied
+on every invoice, but the SRS gives no rate. 18% is the GST rate commonly
+quoted for vehicle rental in India; it must be confirmed before go-live.
+Keeping it a single setting means the confirmation changes one line.
+
+## D15 — OTP lifetime and attempts (closes G3)
+
+**Decision.** `OTP_LIFETIME = timedelta(minutes=10)` and
+`OTP_MAX_ATTEMPTS = 5` (SE-7).
+
+**Rationale.** SE-7 requires OTP verification but gives no lifetime or
+attempt limit. Ten minutes covers SMS delays (CI-5 allows 30 seconds for
+delivery) without leaving a code usable for long. Five attempts against a
+six-digit code gives an attacker a 1-in-200,000 chance per code, and
+matches the five-failure threshold of SE-8.
+
+## D16 — Odometer plausibility (closes G4)
+
+**Decision.** No plausibility limit beyond Return.Odometer itself: a
+return reading lower than the handover reading is rejected.
+
+**Rationale.** Return.Odometer mentions "the configured plausibility limit"
+but never configures one, and AS-4 assumes staff enter readings honestly.
+The supervisor-override fields on ConditionReport stay available if a limit
+is introduced later.
+
+## D17 — Discount codes (closes G5)
+
+**Decision.** A `pricing.DiscountCode` model managed by administrators:
+code (unique, case-insensitive), Percent or Fixed type with a Decimal value
+(a Percent value must be between 0 and 100), validity window, active flag,
+optional usage limit and a usage count. A booking records the code applied
+and the discount amount.
+
+**Rationale.** BR-6 subtracts "any discount" but the SRS defines no source
+for one. Admin-managed codes are the smallest model that gives BR-6 a
+concrete discount, are auditable, and can be switched off.
+
+## D18 — Licence categories and vehicle categories
+
+**Decision.** Licence categories are Car and Two-Wheeler (BR-2, BR-3).
+`VehicleCategory` (Hatchback, Sedan, SUV, Scooter, Motorcycle, ...) is the
+tariff category. Both confirmed by the team.
+
+**Rationale.** BR-2 and BR-3 distinguish only two-wheelers and cars, so the
+BR-3 endorsement check compares a licence category with
+`vehicle.category.vehicle_type`. Tariffs, search filters and reports work
+on the finer `VehicleCategory`.
+
+## D19 — Session and token lifetimes (SE-9)
+
+**Decision.** SimpleJWT access tokens live 5 minutes and refresh tokens 30
+minutes. Refresh tokens rotate: each refresh returns a new pair and the
+used refresh token is blacklisted. Sign-out blacklists the refresh token;
+a password change blacklists all of the user's refresh tokens. A disabled
+account is refused on every request and on refresh.
+
+**Rationale.** SE-9 requires a session to expire after 30 minutes of
+inactivity. With JWTs the refresh token is the session: the client
+exchanges it whenever the user is active, and each exchange starts a fresh
+30-minute window. If the user does nothing for 30 minutes, the last
+refresh token expires and they must sign in again. A client may use an
+access token for up to 5 minutes without refreshing, so the effective idle
+limit is 25–30 minutes, never longer than SE-9 allows. The short access
+lifetime also limits how long a stolen access token is useful, and lets
+Fleet.Users ("disabling an account shall immediately end that user's
+sessions") take effect within one request. **Frontend obligation:** refresh
+only in response to user activity, never on a background timer, or the
+session would never go idle. The second half of SE-9 (re-authentication
+before a payment or refund) is enforced in the payment phase.
+
+## D20 — Proposed authentication values (awaiting team approval)
+
+The SRS does not specify these. They are implemented as listed and stay
+**Proposed** until the team confirms or changes them.
+
+| # | Item | Proposal |
+|---|---|---|
+| A1 | Throttle rates | register 10/hour per IP; sign-in 10/minute per IP; verify OTP 10/minute; resend OTP 5/hour; refresh and sign-out 30/minute; password change 5/hour per user; profile 30/minute; licence submission 10/hour. SE-8 lockout (per account) is separate. |
+| A2 | OTP code length | 6 digits (`OTP_CODE_LENGTH`) |
+| A3 | OTP resend cooldown | 60 seconds (`OTP_RESEND_COOLDOWN`), keyed by the e-mail typed, so it applies whether or not the account exists |
+| A4 | Mobile number format | 10–15 digits with an optional leading `+` |
+| A5 | Licence image types and size | JPG, JPEG, PNG (HI-1 speaks only of camera images, so no PDF); at most 5 MB each (`LICENCE_IMAGE_MAX_BYTES`) |
+| A6 | Both licence images required | Appendix A lists front and back image without parentheses, which the data dictionary uses for optional items |
+| A7 | Password reset by OTP | **Not built**: the SRS has no password-reset requirement. Proposal: OTP to the registered mobile, then a new password, then every session ends |
+| A8 | Duplicate e-mail at registration | Answers 400 "already exists", which shows that the address is registered. SE-8 forbids that only for failed sign-in. Alternative: always answer 201 and e-mail the owner instead |
+| A9 | Sign-in before verification | The same generic 401 as a wrong password; the UI takes a new registrant straight to the verification step |
+| A10 | Where the mobile-change OTP goes | To the new number, proving possession of it (SE-7); the change applies only after the code is confirmed |
+| A11 | Password change ends every session | Including the current one; the user signs in again |
+| A12 | Licence verification queue | Not branch-scoped: licences belong to customers, not branches, so all branch staff and administrators see every pending licence |
+| A13 | Licence resubmission | Allowed in any state (for example after a renewal); the licence returns to Pending Verification |
+| A14 | Lockout response | HTTP 403 with `code: account_locked`; the same response for unknown accounts |
+| A15 | Lockout e-mail | Sent once per lock, even if more attempts arrive during it |
+| A16 | Licence numbers | Stored in upper case so the uniqueness check ignores case |
+
 ---
 
 ## Third-party packages and licences
