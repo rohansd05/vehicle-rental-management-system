@@ -136,11 +136,65 @@ so the two developers rarely edit the same models or migrations. The
 `pricing` app is separate from `fleet` so the 100% coverage target on the
 charge engine (BR-6, BR-7, BR-10 to BR-12) can be measured on one package.
 
+## D10 — CO-7 amended further
+
+**Decision.** In addition to D2:
+
+- ISC (MIT-equivalent) is permitted.
+- MPL-2.0 and LGPL are permitted for dependencies used unmodified.
+- Build-time tools that never ship in the deployed app (for example
+  lightningcss and caniuse-lite) are outside CO-7.
+- The Geist font stays removed.
+
+**Rationale.** The Phase 0 licence scan found permissive or weak-copyleft
+licences in packages we cannot reasonably avoid. ISC is the licence of
+`lucide-react` (shadcn/ui's icon set) and of the d3 modules under Recharts,
+and is functionally identical to MIT. MPL-2.0 (certifi, pathspec) and LGPL
+(python-crontab) are file-level or library-level copyleft: using them
+unmodified as dependencies places no obligation on the VRMS source, which is
+the same reasoning D2 applied to psycopg. lightningcss and caniuse-lite run
+only while Tailwind builds the CSS and are not part of the deployed
+artefact, so they never reach a user. Geist (SIL OFL 1.1) is a font asset
+that would ship to the browser, so it stays out.
+
+Still outside the amended list, for the team to note: `typing_extensions`
+and `aiohappyeyeballs` (PSF-2.0, runtime) and `tslib` (0BSD, runtime; a
+BSD-family licence).
+
+## D11 — django-axes kept, django-celery-results removed
+
+**Decision.** django-axes (MIT) stays in the requirements for the SE-8
+account lockout; it is configured in Phase 1B. django-celery-results is
+removed. Celery task results stay in Valkey (`CELERY_RESULT_BACKEND =
+REDIS_URL`).
+
+**Rationale.** SE-8 requires locking an account for 15 minutes after five
+consecutive failed logins. django-axes implements exactly that, records the
+attempts in the database, and is MIT-licensed. django-celery-results would
+only duplicate a result backend we already have in Valkey and was never
+enabled, so it is dead weight.
+
+## D12 — API documentation access
+
+**Decision.** The OpenAPI schema (`/api/schema/`) and Swagger UI
+(`/api/docs/`) are public in development and restricted to administrators
+in production. The switch is the `API_DOCS_PUBLIC` setting: `True` in
+`config.settings.development`, `False` in base, production and test. When
+restricted, the views accept a Django admin session or a JWT, and require
+`IsAdminUser`.
+
+**Rationale.** In development the docs are the main tool for the frontend
+developer. In production the schema lists every endpoint and parameter,
+which is useful reconnaissance for an attacker (SE-11, OWASP Top Ten:
+broken access control). Session authentication on these two views lets an
+administrator who is signed in to `/admin/` open the docs in a browser,
+which a JWT-only view would not allow.
+
 ---
 
 ## Third-party packages and licences
 
-Checked against CO-7 as amended by D2. Versions are the pins in
+Checked against CO-7 as amended by D2 and D10. Versions are the pins in
 `backend/requirements*.txt` and `frontend/package.json`.
 
 ### Backend runtime (`backend/requirements.txt`)
@@ -157,9 +211,8 @@ Checked against CO-7 as amended by D2. Versions are the pins in
 | celery | 5.5.2 | BSD-3-Clause | OK |
 | redis (client) | 5.2.1 | MIT | OK |
 | django-celery-beat | 2.8.1 | BSD-3-Clause | OK |
-| django-celery-results | 2.5.1 | BSD-3-Clause | OK |
 | bcrypt | 4.2.1 | Apache-2.0 | OK |
-| django-axes | 7.0.2 | MIT | OK |
+| django-axes | 7.0.2 | MIT | OK (SE-8 lockout, configured in Phase 1B; D11) |
 | Pillow | 11.1.0 | MIT-CMU (HPND) | OK under D2 |
 | reportlab | 4.4.10 | BSD | OK |
 | qrcode | 8.0 | BSD | OK |
@@ -188,19 +241,17 @@ Checked against CO-7 as amended by D2. Versions are the pins in
 | django-extensions | 3.2.3 | MIT | OK |
 | ipython | 8.31.0 | BSD-3-Clause | OK |
 
-### Transitive dependencies outside the amended CO-7 list
+### Backend transitive dependencies outside MIT / Apache / BSD
 
-Every other transitive dependency is MIT, BSD or Apache-2.0. These ones are
-not, and need a team decision (amend CO-7 further, or accept them as
-unmodified dependencies like psycopg):
+Every other transitive dependency is MIT, BSD or Apache-2.0.
 
-| Package | Licence | Pulled in by | Scope |
-|---|---|---|---|
-| certifi | MPL-2.0 | requests (razorpay, twilio) | runtime |
-| python-crontab | LGPL-3.0 | django-celery-beat | runtime (arguably covered by the LGPL clause) |
-| typing_extensions | PSF-2.0 | many | runtime |
-| aiohappyeyeballs | PSF-2.0 | aiohttp (twilio) | runtime |
-| pathspec | MPL-2.0 | black | development only |
+| Package | Licence | Pulled in by | Scope | CO-7 |
+|---|---|---|---|---|
+| certifi | MPL-2.0 | requests (razorpay, twilio) | runtime | OK under D10 (unmodified) |
+| python-crontab | LGPL-3.0 | django-celery-beat | runtime | OK under D10 (unmodified) |
+| pathspec | MPL-2.0 | black | development only | OK under D10 |
+| typing_extensions | PSF-2.0 | many | runtime | **Not covered** — noted in D10 |
+| aiohappyeyeballs | PSF-2.0 | aiohttp (twilio) | runtime | **Not covered** — noted in D10 |
 
 ### Removed
 
@@ -212,6 +263,7 @@ unmodified dependencies like psycopg):
 | python-decouple | MIT | D5 — django-environ only |
 | dj-database-url | BSD-3-Clause | D5 — django-environ parses `DATABASE_URL` |
 | django-cors-headers | MIT | D1 — same-origin behind Caddy; the Vite dev server proxies `/api` and `/admin` |
+| django-celery-results | BSD-3-Clause | D11 — never enabled; Celery results stay in Valkey |
 
 ### Frontend runtime (`frontend/package.json` dependencies)
 
@@ -231,7 +283,7 @@ React is pinned to 18 because current Vite templates default to React 19
 | class-variance-authority | 0.7.1 | Apache-2.0 | OK (shadcn/ui) |
 | cn | 0.4.0 | MIT | OK (shadcn/ui; shadcn's replacement for clsx + tailwind-merge) |
 | tw-animate-css | 1.4.0 | MIT | OK (shadcn/ui; CSS only) |
-| lucide-react | 1.52.0 | **ISC** | Flag — permissive (MIT-equivalent) but not named in CO-7; shadcn/ui's icon set |
+| lucide-react | 1.52.0 | ISC | OK under D10 (shadcn/ui's icon set) |
 
 ### Frontend development (`frontend/package.json` devDependencies)
 
@@ -256,17 +308,16 @@ system font stack instead.
 
 ### Frontend transitive dependencies outside MIT / Apache / BSD
 
-| Licence | Packages | Scope |
-|---|---|---|
-| ISC | d3-* and internmap (recharts), victory-vendor (MIT AND ISC) | runtime (shipped to the browser) |
-| 0BSD | tslib | runtime |
-| ISC, BlueOak-1.0.0, MIT-0, CC0-1.0 | build and test tooling (semver, lru-cache, minimatch, ...) | development only |
-| MPL-2.0 | lightningcss (required by Tailwind CSS 4) | build only, not shipped |
-| CC-BY-4.0 | caniuse-lite (browser-support data) | build only, not shipped |
+| Licence | Packages | Scope | CO-7 |
+|---|---|---|---|
+| ISC | d3-* and internmap (recharts), victory-vendor (MIT AND ISC) | runtime (shipped to the browser) | OK under D10 |
+| 0BSD | tslib | runtime | **Not covered** — BSD-family; noted in D10 |
+| ISC, BlueOak-1.0.0, MIT-0, CC0-1.0 | build and test tooling (semver, lru-cache, minimatch, ...) | development only | Outside CO-7 under D10 (never shipped) |
+| MPL-2.0 | lightningcss (required by Tailwind CSS 4) | build only | Outside CO-7 under D10 |
+| CC-BY-4.0 | caniuse-lite (browser-support data) | build only | Outside CO-7 under D10 |
 
-ISC and 0BSD are permissive and functionally equivalent to MIT/BSD.
-lightningcss and caniuse-lite run only at build time. All of these need the
-same team decision as the backend list above.
+D10 names build-time tools explicitly; this table reads it as covering all
+development-only tooling (test runners, linters), which never ships either.
 
 `npm audit` reports a high-severity advisory in `braces` (via fast-glob),
 reachable only through the shadcn CLI, for which no fixed version exists.

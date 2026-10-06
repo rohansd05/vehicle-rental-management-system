@@ -107,6 +107,16 @@ supersede section 7 ("Open decisions") of `docs/VRMS_Handoff.md`.
 - **D8 Mobile:** a responsive PWA meets OE-2 for Release 1.0.
 - **D9 Scope:** every feature in the SRS and Experiments 1-7, deployed by
   12 Oct 2026, built by two developers in parallel.
+- **D10 CO-7 amended further:** ISC (MIT-equivalent) is permitted. MPL-2.0
+  and LGPL are permitted for dependencies used unmodified. Build-time tools
+  that never ship in the deployed app (lightningcss, caniuse-lite) are
+  outside CO-7. Geist stays removed.
+- **D11 Lockout and results:** django-axes (MIT) is kept for SE-8 lockout and
+  configured in Phase 1B. django-celery-results is removed; Celery results
+  stay in Valkey.
+- **D12 API docs:** `/api/schema/` and `/api/docs/` are public in
+  development (`API_DOCS_PUBLIC = True`) and restricted to administrators
+  in production.
 
 ## Ownership
 

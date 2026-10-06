@@ -147,12 +147,16 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+# D12: /api/schema/ and /api/docs/ are public only when API_DOCS_PUBLIC is
+# True (development). Otherwise they require an administrator; config/urls.py
+# applies the permission classes.
+API_DOCS_PUBLIC = False
+
 SPECTACULAR_SETTINGS = {
     "TITLE": "Vehicle Rental Management System API",
     "DESCRIPTION": "REST + JSON API documented with OpenAPI 3.0 (CO-4).",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
-    "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",
