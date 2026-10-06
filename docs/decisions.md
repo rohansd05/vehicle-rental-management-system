@@ -190,6 +190,75 @@ broken access control). Session authentication on these two views lets an
 administrator who is signed in to `/admin/` open the docs in a browser,
 which a JWT-only view would not allow.
 
+## D13 — Ratings (closes G1)
+
+**Decision.** A `bookings.Rating` model: one per Completed booking
+(OneToOne to Booking, PROTECT), with `vehicle_rating` and `service_rating`
+each 1–5 (database check constraints) and an optional comment. A vehicle's
+average rating is computed from its ratings when needed, never stored.
+"Only for Completed bookings" is enforced by the rating service.
+
+**Rationale.** Search.Detail displays and Search.Filter filters on an
+average customer rating, but the SRS defines no requirement that captures
+one. Tying a rating to a completed booking means only real renters rate,
+and at most once. Computing the average avoids a denormalised column that
+could drift (CO-5).
+
+## D14 — Tax rate (closes G2, placeholder)
+
+**Decision.** `TAX_RATE_PERCENT = Decimal("18.00")` in
+`config/settings/business_rules.py`. **This is a placeholder awaiting
+confirmation** by the team; the comment next to the setting says so.
+
+**Rationale.** BR-6 adds "taxes" and Pay.Invoice requires the taxes applied
+on every invoice, but the SRS gives no rate. 18% is the GST rate commonly
+quoted for vehicle rental in India; it must be confirmed before go-live.
+Keeping it a single setting means the confirmation changes one line.
+
+## D15 — OTP lifetime and attempts (closes G3)
+
+**Decision.** `OTP_LIFETIME = timedelta(minutes=10)` and
+`OTP_MAX_ATTEMPTS = 5` (SE-7).
+
+**Rationale.** SE-7 requires OTP verification but gives no lifetime or
+attempt limit. Ten minutes covers SMS delays (CI-5 allows 30 seconds for
+delivery) without leaving a code usable for long. Five attempts against a
+six-digit code gives an attacker a 1-in-200,000 chance per code, and
+matches the five-failure threshold of SE-8.
+
+## D16 — Odometer plausibility (closes G4)
+
+**Decision.** No plausibility limit beyond Return.Odometer itself: a
+return reading lower than the handover reading is rejected.
+
+**Rationale.** Return.Odometer mentions "the configured plausibility limit"
+but never configures one, and AS-4 assumes staff enter readings honestly.
+The supervisor-override fields on ConditionReport stay available if a limit
+is introduced later.
+
+## D17 — Discount codes (closes G5)
+
+**Decision.** A `pricing.DiscountCode` model managed by administrators:
+code (unique, case-insensitive), Percent or Fixed type with a Decimal value
+(a Percent value must be between 0 and 100), validity window, active flag,
+optional usage limit and a usage count. A booking records the code applied
+and the discount amount.
+
+**Rationale.** BR-6 subtracts "any discount" but the SRS defines no source
+for one. Admin-managed codes are the smallest model that gives BR-6 a
+concrete discount, are auditable, and can be switched off.
+
+## D18 — Licence categories and vehicle categories
+
+**Decision.** Licence categories are Car and Two-Wheeler (BR-2, BR-3).
+`VehicleCategory` (Hatchback, Sedan, SUV, Scooter, Motorcycle, ...) is the
+tariff category. Both confirmed by the team.
+
+**Rationale.** BR-2 and BR-3 distinguish only two-wheelers and cars, so the
+BR-3 endorsement check compares a licence category with
+`vehicle.category.vehicle_type`. Tariffs, search filters and reports work
+on the finer `VehicleCategory`.
+
 ---
 
 ## Third-party packages and licences

@@ -117,8 +117,24 @@ supersede section 7 ("Open decisions") of `docs/VRMS_Handoff.md`.
 - **D12 API docs:** `/api/schema/` and `/api/docs/` are public in
   development (`API_DOCS_PUBLIC = True`) and restricted to administrators
   in production.
+- **D13 Ratings (G1):** `bookings.Rating`, one per Completed booking,
+  vehicle_rating and service_rating 1-5, optional comment. A vehicle's
+  average rating is computed from these, never stored.
+- **D14 Tax rate (G2):** `TAX_RATE_PERCENT = Decimal("18.00")` is a
+  PLACEHOLDER awaiting confirmation.
+- **D15 OTP (G3):** `OTP_LIFETIME` = 10 minutes, `OTP_MAX_ATTEMPTS` = 5 (SE-7).
+- **D16 Odometer (G4):** no plausibility limit beyond Return.Odometer
+  (a return reading may not be lower than the handover reading); AS-4
+  assumes staff enter readings honestly.
+- **D17 Discounts (G5):** a `pricing.DiscountCode` model managed by admins.
+- **D18 Categories:** licence categories are Car and Two-Wheeler (BR-2,
+  BR-3); `VehicleCategory` (Hatchback, SUV, ...) is the tariff category.
+  Both confirmed.
 
 ## Ownership
+
+Nidhi is building every app until she hands over to Rohan. The split and
+rule below apply from that handoff.
 
 - **Rohan:** accounts, fleet (except availability), bookings, payments,
   notifications, reports, core (WBS 1.4.1, 1.4.3, 1.4.5).
