@@ -9,9 +9,12 @@ accounts are created in the Django admin.
 from django.conf import settings
 from django.contrib.auth import authenticate, user_logged_in
 from django.core.cache import cache
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.exceptions import Throttled, ValidationError
+from rest_framework.generics import ListAPIView
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -20,10 +23,17 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from apps.core.permissions import IsAdministrator, IsBranchStaff, IsCustomer
+
 from . import services
+from .models import Licence
 from .serializers import (
     DetailSerializer,
     EmailSerializer,
+    LicenceRejectSerializer,
+    LicenceReviewSerializer,
+    LicenceSerializer,
+    LicenceSubmitSerializer,
     LoginSerializer,
     OTPCodeSerializer,
     PasswordChangeSerializer,
@@ -325,3 +335,131 @@ class ConfirmMobileView(_ThrottledView):
         except services.OTPError as exc:
             raise ValidationError({"detail": GENERIC_OTP_FAILURE}) from exc
         return Response(ProfileSerializer(user).data)
+
+
+# ─── Driving licence ──────────────────────────────────────────────────────
+
+LICENCE_TAG = "Licence"
+VERIFICATION_TAG = "Licence verification"
+
+
+class LicenceView(_ThrottledView):
+    """The customer's own driving licence (Book.Eligible.No: submit a licence now)."""
+
+    permission_classes = [IsCustomer]
+    parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = "licence_submit"
+
+    def get_throttles(self):
+        return super().get_throttles() if self.request.method == "POST" else []
+
+    @extend_schema(tags=[LICENCE_TAG], summary="My driving licence", responses=LicenceSerializer)
+    def get(self, request):
+        licence = Licence.objects.get(customer=request.user.customer)
+        return Response(LicenceSerializer(licence, context={"request": request}).data)
+
+    @extend_schema(
+        tags=[LICENCE_TAG],
+        summary="Submit or resubmit my driving licence",
+        description=(
+            "Multipart form. Both images are required (Appendix A front and back image): "
+            "JPG or PNG, at most 5 MB. An already-expired licence is refused (BR-2). The "
+            "licence then awaits verification by branch staff or an administrator."
+        ),
+        request={"multipart/form-data": LicenceSubmitSerializer},
+        responses={200: LicenceSerializer, 400: OpenApiResponse(description="Invalid")},
+        examples=[
+            OpenApiExample(
+                "Submit",
+                request_only=True,
+                value={
+                    "licence_number": "MH02 20190012345",
+                    "issuing_authority": "RTO Mumbai (West)",
+                    "issue_date": "2019-06-01",
+                    "expiry_date": "2039-05-31",
+                    "categories": ["Car", "Two-Wheeler"],
+                    "front_image": "(binary)",
+                    "back_image": "(binary)",
+                },
+            )
+        ],
+    )
+    def post(self, request):
+        serializer = LicenceSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            licence = services.submit_licence(
+                request.user.customer, serializer.validated_data, request
+            )
+        except services.LicenceError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return Response(LicenceSerializer(licence, context={"request": request}).data)
+
+
+class PendingLicenceListView(ListAPIView):
+    """Licences awaiting verification, oldest first.
+
+    Licences are not tied to a branch, so every branch's staff see the queue.
+    """
+
+    permission_classes = [IsBranchStaff | IsAdministrator]
+    serializer_class = LicenceReviewSerializer
+
+    def get_queryset(self):
+        return (
+            Licence.objects.filter(status=Licence.Status.PENDING_VERIFICATION)
+            .select_related("customer__user")
+            .prefetch_related("categories")
+            .order_by("updated_at")
+        )
+
+    @extend_schema(tags=[VERIFICATION_TAG], summary="Licences pending verification")
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
+class LicenceApproveView(APIView):
+    permission_classes = [IsBranchStaff | IsAdministrator]
+
+    @extend_schema(
+        tags=[VERIFICATION_TAG],
+        summary="Approve a licence",
+        request=None,
+        responses={200: LicenceReviewSerializer, 400: DetailSerializer, 404: None},
+    )
+    def post(self, request, pk: int):
+        get_object_or_404(Licence, pk=pk)
+        try:
+            licence = services.approve_licence(pk, request.user, request)
+        except services.LicenceError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return Response(LicenceReviewSerializer(licence, context={"request": request}).data)
+
+
+class LicenceRejectView(APIView):
+    permission_classes = [IsBranchStaff | IsAdministrator]
+
+    @extend_schema(
+        tags=[VERIFICATION_TAG],
+        summary="Reject a licence (a reason is required)",
+        request=LicenceRejectSerializer,
+        responses={200: LicenceReviewSerializer, 400: DetailSerializer, 404: None},
+        examples=[
+            OpenApiExample(
+                "Reject",
+                request_only=True,
+                value={"reason": "The photograph of the back of the licence is unreadable."},
+            )
+        ],
+    )
+    def post(self, request, pk: int):
+        get_object_or_404(Licence, pk=pk)
+        serializer = LicenceRejectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            licence = services.reject_licence(
+                pk, request.user, serializer.validated_data["reason"], request
+            )
+        except services.LicenceError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return Response(LicenceReviewSerializer(licence, context={"request": request}).data)

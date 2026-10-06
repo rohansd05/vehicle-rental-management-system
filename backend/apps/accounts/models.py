@@ -181,7 +181,8 @@ class Licence(TimeStampedModel):
     # Appendix A front/back image; SI-3: only the object key is stored.
     front_image = models.FileField(upload_to="licences/", blank=True)
     back_image = models.FileField(upload_to="licences/", blank=True)
-    # Licence.verify(); SE-10 audits licence verification decisions.
+    # Licence.verify(); SE-10 audits licence verification decisions. For a
+    # rejection these record who rejected it and when.
     verified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -190,6 +191,8 @@ class Licence(TimeStampedModel):
         related_name="licences_verified",
     )
     verified_at = models.DateTimeField(null=True, blank=True)
+    # SE-10 licence verification decision: a rejection always states why.
+    rejection_reason = models.TextField(blank=True)
 
     class Meta:
         constraints = [

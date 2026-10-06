@@ -87,3 +87,8 @@ OTP_RESEND_COOLDOWN = timedelta(seconds=60)
 # SE-8: account lockout (configured with django-axes in Phase 1B, D11).
 LOGIN_FAILURE_LIMIT = 5
 LOGIN_LOCKOUT_DURATION = timedelta(minutes=15)
+
+# Licence images (Appendix A front/back image; HI-1 camera images; D3).
+# Proposed (SRS silent; docs/decisions.md D20): accepted types and size limit.
+LICENCE_IMAGE_EXTENSIONS = ("jpg", "jpeg", "png")
+LICENCE_IMAGE_MAX_BYTES = 5 * 1024 * 1024

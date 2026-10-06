@@ -4,6 +4,7 @@ Every write here calls record_audit (Fleet.Audit, SE-10). Views stay thin.
 """
 
 import secrets
+import uuid
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
@@ -13,9 +14,9 @@ from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from apps.core.audit import record_audit, snapshot
-from apps.notifications.services import queue_otp_sms
+from apps.notifications.services import queue_email, queue_otp_sms
 
-from .models import Customer, Licence, OneTimePassword, User
+from .models import Customer, Licence, LicenceCategory, OneTimePassword, User
 
 
 class OTPError(Exception):
@@ -253,3 +254,95 @@ def change_password(user: User, new_password: str, request=None) -> None:
     user.save(update_fields=["password"])
     ended = blacklist_all_refresh_tokens(user)
     record_audit(user, "Password Changed", user, after={"sessions_ended": ended}, request=request)
+
+
+# ─── Driving licence (Book.Eligible.Licence, BR-2, BR-3; SE-10) ───────────
+
+
+class LicenceError(Exception):
+    """A licence submission or decision is not allowed; the message says why."""
+
+
+def _store_as(upload, prefix: str):
+    """Give an upload an unguessable object key (SI-3); keep its extension."""
+    extension = upload.name.rsplit(".", 1)[-1].lower()
+    upload.name = f"{prefix}-{uuid.uuid4().hex}.{extension}"
+    return upload
+
+
+@transaction.atomic
+def submit_licence(customer: Customer, data: dict, request=None) -> Licence:
+    """Submit or resubmit the customer's licence; it then awaits verification.
+
+    BR-2: a licence must be valid, so one that has already expired is refused
+    at submission. The images were validated by the serializer (D3).
+    """
+    today = timezone.localdate()
+    if data["expiry_date"] < today:
+        raise LicenceError("This licence has already expired.")
+    if data["issue_date"] > today:
+        raise LicenceError("The issue date cannot be in the future.")
+    if data["issue_date"] >= data["expiry_date"]:
+        raise LicenceError("The expiry date must be after the issue date.")
+    number = data["licence_number"].strip().upper()
+    taken = Licence.objects.filter(licence_number=number).exclude(customer=customer).exists()
+    if taken:
+        raise LicenceError("This licence number is already registered to another account.")
+
+    licence, _ = Licence.objects.select_for_update().get_or_create(customer=customer)
+    before = snapshot(licence)
+    licence.licence_number = number
+    licence.issuing_authority = data["issuing_authority"]
+    licence.issue_date = data["issue_date"]
+    licence.expiry_date = data["expiry_date"]
+    licence.front_image = _store_as(data["front_image"], "front")
+    licence.back_image = _store_as(data["back_image"], "back")
+    licence.status = Licence.Status.PENDING_VERIFICATION
+    licence.verified_by = None
+    licence.verified_at = None
+    licence.rejection_reason = ""
+    licence.save()
+    licence.categories.all().delete()
+    LicenceCategory.objects.bulk_create(
+        LicenceCategory(licence=licence, category=category) for category in data["categories"]
+    )
+    after = {**snapshot(licence), "categories": sorted(data["categories"])}
+    record_audit(customer.user, "Licence Submitted", licence, before, after, request)
+    return licence
+
+
+def _decide(licence_id: int, actor: User, request, *, approve: bool, reason: str = ""):
+    with transaction.atomic():
+        licence = (
+            Licence.objects.select_for_update().select_related("customer__user").get(pk=licence_id)
+        )
+        if licence.status != Licence.Status.PENDING_VERIFICATION:
+            raise LicenceError("Only a licence pending verification can be approved or rejected.")
+        before = snapshot(licence)
+        licence.status = Licence.Status.VERIFIED if approve else Licence.Status.REJECTED
+        licence.verified_by = actor
+        licence.verified_at = timezone.now()
+        licence.rejection_reason = "" if approve else reason
+        licence.save(
+            update_fields=["status", "verified_by", "verified_at", "rejection_reason", "updated_at"]
+        )
+        action = "Licence Verified" if approve else "Licence Rejected"
+        record_audit(actor, action, licence, before, snapshot(licence), request)
+        customer_user = licence.customer.user
+        context = {"name": customer_user.name, "licence_number": licence.licence_number}
+        if approve:
+            queue_email(customer_user, "licence_approved", context)
+        else:
+            queue_email(customer_user, "licence_rejected", {**context, "reason": reason})
+    return licence
+
+
+def approve_licence(licence_id: int, actor: User, request=None) -> Licence:
+    return _decide(licence_id, actor, request, approve=True)
+
+
+def reject_licence(licence_id: int, actor: User, reason: str, request=None) -> Licence:
+    reason = (reason or "").strip()
+    if not reason:
+        raise LicenceError("A reason is required to reject a licence.")
+    return _decide(licence_id, actor, request, approve=False, reason=reason)

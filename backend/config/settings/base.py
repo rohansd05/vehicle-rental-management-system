@@ -176,6 +176,7 @@ REST_FRAMEWORK = {
         "auth_token": "30/minute",
         "auth_password": "5/hour",
         "auth_profile": "30/minute",
+        "licence_submit": "10/hour",
     },
 }
 
@@ -205,6 +206,11 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "REST + JSON API documented with OpenAPI 3.0 (CO-4).",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # Several serializers have a "status" field; give each enum a clear name.
+    "ENUM_NAME_OVERRIDES": {
+        "LicenceStatusEnum": "apps.accounts.models.Licence.Status",
+        "HealthStatusEnum": ["ok", "degraded"],
+    },
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",

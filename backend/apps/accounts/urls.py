@@ -16,4 +16,8 @@ urlpatterns = [
     path("auth/password/change/", views.PasswordChangeView.as_view(), name="password-change"),
     path("me/", views.MeView.as_view(), name="me"),
     path("me/verify-mobile/", views.ConfirmMobileView.as_view(), name="verify-mobile"),
+    path("licence/", views.LicenceView.as_view(), name="licence"),
+    path("licences/", views.PendingLicenceListView.as_view(), name="licence-pending"),
+    path("licences/<int:pk>/approve/", views.LicenceApproveView.as_view(), name="licence-approve"),
+    path("licences/<int:pk>/reject/", views.LicenceRejectView.as_view(), name="licence-reject"),
 ]

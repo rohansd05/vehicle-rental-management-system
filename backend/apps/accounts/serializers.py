@@ -7,7 +7,11 @@ from django.core.validators import RegexValidator
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import User
+from apps.core.choices import VehicleType
+from apps.core.files import signed_file_url
+from apps.core.validators import validate_image_upload
+
+from .models import Licence, User
 
 # Proposed (docs/decisions.md D20): 10-15 digits with an optional leading +.
 mobile_validator = RegexValidator(
@@ -138,3 +142,106 @@ class PasswordChangeSerializer(serializers.Serializer):
     def validate(self, attrs):
         _check_password_rules(attrs["new_password"], self.context["request"].user)
         return attrs
+
+
+# ─── Driving licence ──────────────────────────────────────────────────────
+
+
+def _licence_image_field() -> serializers.FileField:
+    return serializers.FileField(
+        write_only=True,
+        help_text="JPG or PNG image, at most 5 MB (Appendix A front/back image).",
+    )
+
+
+class LicenceSubmitSerializer(serializers.Serializer):
+    """Appendix A licence: number, authority, 1:m category, dates, both images."""
+
+    licence_number = serializers.CharField(max_length=32)
+    issuing_authority = serializers.CharField(max_length=150)
+    issue_date = serializers.DateField()
+    expiry_date = serializers.DateField()
+    categories = serializers.ListField(
+        child=serializers.ChoiceField(choices=VehicleType.choices), min_length=1, max_length=2
+    )
+    front_image = _licence_image_field()
+    back_image = _licence_image_field()
+
+    def validate_categories(self, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("List each category once.")
+        return value
+
+    def _validate_image(self, value):
+        try:
+            validate_image_upload(
+                value,
+                extensions=settings.LICENCE_IMAGE_EXTENSIONS,
+                max_bytes=settings.LICENCE_IMAGE_MAX_BYTES,
+            )
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages)) from exc
+        return value
+
+    def validate_front_image(self, value):
+        return self._validate_image(value)
+
+    def validate_back_image(self, value):
+        return self._validate_image(value)
+
+
+class LicenceSerializer(serializers.ModelSerializer):
+    """A licence as its owner, branch staff and administrators see it."""
+
+    categories = serializers.SerializerMethodField()
+    front_image_url = serializers.SerializerMethodField()
+    back_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Licence
+        fields = [
+            "id",
+            "licence_number",
+            "issuing_authority",
+            "issue_date",
+            "expiry_date",
+            "categories",
+            "status",
+            "rejection_reason",
+            "verified_at",
+            "front_image_url",
+            "back_image_url",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_categories(self, licence) -> list[str]:
+        return sorted(category.category for category in licence.categories.all())
+
+    def get_front_image_url(self, licence) -> str | None:
+        return signed_file_url(licence.front_image, self.context.get("request"))
+
+    def get_back_image_url(self, licence) -> str | None:
+        return signed_file_url(licence.back_image, self.context.get("request"))
+
+
+class LicenceCustomerSerializer(serializers.Serializer):
+    customer_id = serializers.IntegerField(source="pk")
+    name = serializers.CharField(source="user.name")
+    email = serializers.EmailField(source="user.email")
+    mobile_no = serializers.CharField(source="user.mobile_no")
+    date_of_birth = serializers.DateField()
+
+
+class LicenceReviewSerializer(LicenceSerializer):
+    """For verification: the licence plus the customer it belongs to (BR-2)."""
+
+    customer = LicenceCustomerSerializer(read_only=True)
+
+    class Meta(LicenceSerializer.Meta):
+        fields = [*LicenceSerializer.Meta.fields, "customer"]
+        read_only_fields = fields
+
+
+class LicenceRejectSerializer(serializers.Serializer):
+    reason = serializers.CharField(trim_whitespace=True, allow_blank=False, max_length=1000)
