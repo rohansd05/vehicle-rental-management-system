@@ -3,12 +3,15 @@ import { Route, Routes } from 'react-router-dom'
 import { HomePage } from '@/components/HomePage'
 import { AppShell } from '@/components/layout/AppShell'
 import { PublicLayout } from '@/components/layout/PublicLayout'
+import { LoginPage } from '@/features/auth/LoginPage'
+import { RegisterPage } from '@/features/auth/RegisterPage'
+import { VerifyOtpPage } from '@/features/auth/VerifyOtpPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { HelpPage } from '@/pages/HelpPage'
 import { NotAvailablePage } from '@/pages/NotAvailablePage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 
-import { RequireAuth, RequireRole } from './guards'
+import { RedirectIfSignedIn, RequireAuth, RequireRole } from './guards'
 import { UPCOMING_ITEMS } from './navigation'
 
 export function AppRoutes() {
@@ -16,6 +19,30 @@ export function AppRoutes() {
     <Routes>
       <Route element={<PublicLayout />}>
         <Route index element={<HomePage />} />
+        <Route
+          path="login"
+          element={
+            <RedirectIfSignedIn>
+              <LoginPage />
+            </RedirectIfSignedIn>
+          }
+        />
+        <Route
+          path="register"
+          element={
+            <RedirectIfSignedIn>
+              <RegisterPage />
+            </RedirectIfSignedIn>
+          }
+        />
+        <Route
+          path="verify"
+          element={
+            <RedirectIfSignedIn>
+              <VerifyOtpPage />
+            </RedirectIfSignedIn>
+          }
+        />
         <Route path="help" element={<HelpPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
