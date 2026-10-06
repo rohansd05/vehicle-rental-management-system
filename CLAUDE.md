@@ -74,6 +74,10 @@ matched exactly, not reinterpreted.
 - Ask before running destructive commands (`migrate --fake`, dropping a
   database, force-pushing, deleting migrations).
 - Run Python tools through `backend\venv\Scripts\python.exe` (Python 3.12).
+- After any API change, run `npm run api:schema` and `npm run api:types` in
+  `frontend/` and commit `docs/api/openapi.yaml` and `src/api/schema.d.ts`.
+- Frontend tokens: the access token stays in memory only; never use
+  localStorage or sessionStorage for tokens (D21).
 - Celery on Windows needs `--pool=solo`
   (`celery -A config worker -l info --pool=solo`); the default prefork pool
   does not work there.

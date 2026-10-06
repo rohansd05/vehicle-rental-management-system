@@ -344,6 +344,22 @@ rotation: the second presents a just-blacklisted token and is signed out.
 Coordinating tabs (for example with a BroadcastChannel) is proposed as F1
 below.
 
+## Phase 1C frontend: proposed items (awaiting team approval)
+
+The SRS does not settle these; the frontend implements them as listed.
+
+| # | Item | Proposal |
+|---|---|---|
+| F1 | Several tabs open at once | Not coordinated yet: two tabs refreshing at the same instant can sign one of them out (D21). Proposal: share refreshes between tabs with a BroadcastChannel. |
+| F2 | When the access token is refreshed | One minute before it expires, and only if the user did something since the last refresh (pointer, keyboard, touch, or returning to the tab). Coming back after the token lapsed refreshes at once. |
+| F3 | OTP error wording | The server answers every failure the same way. The verify screen knows when the code was sent and how many tries were made on this screen, so it says "wrong (n tries left)", "expired" or "too many attempts". After a page reload it falls back to the server's generic message. |
+| F4 | Licence review screen | There is no `GET licences/{id}/`; the review screen uses the licence passed from the queue, or finds it in the queue's first page (20 oldest). Proposal: add the detail endpoint. |
+| F5 | Mobile-change resend | A visible 60-second countdown on the client, matching A3; the server applies only the profile throttle (A1) to mobile-change codes. |
+| F6 | Accent colour | `oklch(0.47 0.12 240)` in light mode and `oklch(0.76 0.11 235)` in dark mode, as the `--brand` token; light and dark follow the OS. |
+| F7 | Help link (UI-2) | Present on every screen; it leads to a short help page until the online help system (UD-1) is built. |
+| F8 | Planned features in the menu | Shown with a "Soon" label and an honest "not available yet" page; no sample data. |
+| F9 | Registration fields | Date of birth (BR-2) and an emergency contact (SA-4) are asked at registration, because the backend requires them. |
+
 ---
 
 ## Third-party packages and licences

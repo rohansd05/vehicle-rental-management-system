@@ -243,9 +243,32 @@ cd backend
 
 ```powershell
 cd frontend
-npm run test -- --run
-npm run lint
+npm run typecheck           # tsc
+npm run lint                # oxlint
+npm run test -- --run       # Vitest + Testing Library; the API is mocked with MSW
+npm run build
 ```
+
+### Frontend API types
+
+The frontend's API types are generated from the backend schema. After any
+API change, regenerate both files and commit them:
+
+```powershell
+cd frontend
+npm run api:schema          # backend schema -> docs/api/openapi.yaml
+npm run api:types           # docs/api/openapi.yaml -> src/api/schema.d.ts
+```
+
+### How the session works (D19, D21)
+
+- Sign-in returns a short-lived access token, kept only in memory; the
+  refresh token is an httpOnly cookie the page cannot read. Nothing is
+  stored in localStorage or sessionStorage.
+- Reloading the page restores the session from the cookie.
+- While you use the app, the access token is renewed shortly before it
+  expires. After 30 minutes without activity you are signed out and the
+  sign-in page says why.
 
 Coverage targets: at least 70% of business logic overall, and 100% of the
 pricing, availability and settlement logic.
@@ -269,15 +292,16 @@ cd backend
 |---|---|
 | `POST auth/register/` | Anyone (creates a customer account; staff accounts are created in the Django admin) |
 | `POST auth/verify-otp/`, `POST auth/resend-otp/` | Anyone |
-| `POST auth/login/`, `POST auth/refresh/` | Anyone |
-| `POST auth/logout/`, `POST auth/password/change/` | Any signed-in user |
+| `POST auth/login/`, `POST auth/refresh/`, `POST auth/logout/` | Anyone (refresh and logout act on the refresh cookie) |
+| `POST auth/password/change/` | Any signed-in user |
 | `GET`/`PATCH me/`, `POST me/verify-mobile/` | Any signed-in user |
 | `GET`/`POST licence/` | Customer |
 | `GET licences/`, `POST licences/{id}/approve/`, `POST licences/{id}/reject/` | Branch Staff, Administrator |
 | `GET files/{token}/` | Anyone holding a valid signed link (expires after 15 minutes, SI-3) |
 
-Sign-in returns a JWT pair: send `Authorization: Bearer <access>` and
-refresh with `auth/refresh/` while the user is active (D19). In development
+Sign-in returns `{access, user}` and sets the refresh token in the httpOnly
+`vrms_refresh` cookie (D21). Send `Authorization: Bearer <access>`; call
+`auth/refresh/` with no body while the user is active (D19). In development
 the OTP SMS is printed by the Celery worker
 (`celery -A config worker --pool=solo -l info`); start the worker before
 registering.
