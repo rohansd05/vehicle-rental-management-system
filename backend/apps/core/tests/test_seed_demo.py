@@ -26,7 +26,7 @@ from apps.fleet.models import (
     VehicleCategory,
     VehicleDocument,
 )
-from apps.pricing.models import AddOn, FuelPrice, Tariff
+from apps.pricing.models import AddOn, DiscountCode, FuelPrice, Tariff
 
 pytestmark = pytest.mark.django_db
 
@@ -36,6 +36,7 @@ EXPECTED = {
     VehicleCategory: 5,
     Tariff: 5,
     AddOn: 5,
+    DiscountCode: 2,  # one percent, one fixed (D17)
     FuelPrice: 4,
     Vehicle: 20,
     Car: 12,
