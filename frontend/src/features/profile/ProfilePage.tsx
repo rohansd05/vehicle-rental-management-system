@@ -230,7 +230,8 @@ function MobileCard({ profile }: { profile: Profile }) {
         <FormAlert message={formError} />
         <StatusMessage message={status} tone={pendingMobile ? 'info' : 'success'} />
         {pendingMobile ? (
-          <form onSubmit={onConfirm} noValidate className="grid gap-4">
+          // Distinct keys: React must not reuse the number input as the code input.
+          <form key="confirm-code" onSubmit={onConfirm} noValidate className="grid gap-4">
             <Field
               id="mobile-code"
               label={`Code sent to ${pendingMobile}`}
@@ -279,7 +280,7 @@ function MobileCard({ profile }: { profile: Profile }) {
             </div>
           </form>
         ) : (
-          <form onSubmit={onRequest} noValidate className="grid gap-4">
+          <form key="request-code" onSubmit={onRequest} noValidate className="grid gap-4">
             <Field
               id="new-mobile"
               label="New mobile number"
