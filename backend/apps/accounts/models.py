@@ -132,6 +132,32 @@ class Administrator(TimeStampedModel):
         return f"Administrator {self.admin_id}: {self.user}"
 
 
+class BranchStaff(TimeStampedModel):
+    """Exp 3 BranchStaff. branch_id maps to the branch foreign key."""
+
+    staff_id = models.BigAutoField(primary_key=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="branch_staff"
+    )
+    # Branch ◇ BranchStaff (Exp 3 aggregation): staff exist independently.
+    branch = models.ForeignKey("fleet.Branch", on_delete=models.PROTECT, related_name="staff")
+
+    class Meta:
+        verbose_name_plural = "branch staff"
+
+    def __str__(self) -> str:
+        return f"Staff {self.staff_id}: {self.user}"
+
+
+class BranchManager(Administrator):
+    """Exp 3 BranchManager extends Administrator: limited to one branch (SRS 2.2)."""
+
+    branch = models.ForeignKey("fleet.Branch", on_delete=models.PROTECT, related_name="managers")
+
+    def __str__(self) -> str:
+        return f"Branch manager {self.admin_id}: {self.user} ({self.branch})"
+
+
 # ─── Licence (Customer ◆ Licence) ─────────────────────────────────────────
 
 

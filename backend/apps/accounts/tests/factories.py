@@ -9,6 +9,8 @@ from django.utils import timezone
 
 from apps.accounts.models import (
     Administrator,
+    BranchManager,
+    BranchStaff,
     Customer,
     Licence,
     LicenceCategory,
@@ -63,6 +65,22 @@ class AdministratorFactory(factory.django.DjangoModelFactory):
         model = Administrator
 
     user = factory.SubFactory(UserFactory, role=User.Role.ADMINISTRATOR, is_staff=True)
+
+
+class BranchStaffFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BranchStaff
+
+    user = factory.SubFactory(UserFactory, role=User.Role.BRANCH_STAFF)
+    branch = factory.SubFactory("apps.fleet.tests.factories.BranchFactory")
+
+
+class BranchManagerFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BranchManager
+
+    user = factory.SubFactory(UserFactory, role=User.Role.BRANCH_MANAGER)
+    branch = factory.SubFactory("apps.fleet.tests.factories.BranchFactory")
 
 
 class LicenceFactory(factory.django.DjangoModelFactory):
